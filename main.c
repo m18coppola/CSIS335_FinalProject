@@ -1,18 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-struct pixel {
-	float r;
-	float g;
-	float b;
-};
+typedef union {
+	struct {float x, y, z; };
+	struct {float r, g, b; };
+	float v[3];
+} vec3_t;
 
 int
 main(int argc, char *argv[])
 {
 	int width;
 	int height;
-	struct pixel *framebuffer;
+	vec3_t *framebuffer;
 	int i, j;
 	char *filename = "output.ppm";
 
@@ -20,7 +20,7 @@ main(int argc, char *argv[])
 	height = 768;
 
 	/* allocate an array of pixels for the image */
-	framebuffer = (struct pixel *)malloc(sizeof(struct pixel) * width * height);
+	framebuffer = (vec3_t *)malloc(sizeof(vec3_t) * width * height);
 
 	/* set arbitrary colors for each pixel*/
 	for (i = 0; i < height; i++) {
