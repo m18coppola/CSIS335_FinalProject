@@ -8,6 +8,8 @@ The more we can document here, the less we have to use our brains when we have t
 	- https://github.com/ssloy/tinyraytracer/wiki/
 - Portable Pixmap Format
 	- https://en.wikipedia.org/wiki/Netpbm
+- cglm (header-only graphics math lib for c)
+	- https://cglm.readthedocs.io/en/latest/
 - Random distribution of rays among threads
 	- https://ieeexplore.ieee.org/abstract/document/1580017
 - General raytracing optimizations
