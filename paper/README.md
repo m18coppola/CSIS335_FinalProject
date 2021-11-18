@@ -4,6 +4,8 @@ Use this file to keep track of your thoughts and efforts!
 The more we can document here, the less we have to use our brains when we have to regurgitate it into a LaTex document.
 
 ## Interesting Links
+- tinyraytracer
+	- https://github.com/ssloy/tinyraytracer/wiki/
 - Portable Pixmap Format
 	- https://en.wikipedia.org/wiki/Netpbm
 - Random distribution of rays among threads
