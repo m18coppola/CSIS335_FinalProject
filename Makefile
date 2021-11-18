@@ -1,4 +1,4 @@
-CC=gcc -g -Wall -lpthread
+CC=gcc -g -Wall -lpthread -lm
 CFILES=main.c
 OFILES=$(CFILES:.c=.o)
 
@@ -9,4 +9,4 @@ jacobi:	$(OFILES)
 	$(CC) -c $<
 
 clean::
-	/bin/rm $(OFILES) jacobi
+	/bin/rm $(OFILES) main
