@@ -150,26 +150,28 @@ main(int argc, char *argv[])
 			/* We've made the assumption that the screen is square when we normalized the coords */
 			/* We will correct this by multiplying our x by our aspect ratio */
 			float aspect_ratio = (float)width/(float)height;
-			x_screen *= aspect_ratio;
+			x_frame *= aspect_ratio;
 
 			/* now we will account for the field of view */
 			/* We'll achieve this by growing or shrinking the frame height to the desired fov */
 			/* we find by how much with trig */
 			/* See: https://www.scratchapixel.com/images/upload/ray-tracing-camera/camprofile.png? */
 			/* the frame and the eye are fixed at 1 distance unit apart */
-			/* the ray assumes the fov is 90 degrees , so we can multiply by atan(fov/2) to scale proportionally */
+			/* the ray assumes the fov is 90 degrees , so we can multiply by tan(fov/2) to scale proportionally */
 
-			x_frame *= atan(fov/2);
+			x_frame *= tan(fov/2.);
 
 			/* and done */
-			float x = x_frame
-			float y = y_frame
+			float x = x_frame;
+			float y = y_frame;
 
-			#endif
+			#else
 
 			/* same thing but all in two lines */
-			float x = (2*(i + 0.5)/(float)width - 1)*tan(fov/2.)*width/(float)height;
+			float x =  (2*(i + 0.5)/(float)width  - 1)*tan(fov/2.)*width/(float)height;
 			float y = -(2*(j + 0.5)/(float)height - 1)*tan(fov/2.);
+			#endif
+
 			vec3 dir;
 			dir[0] = x;
 			dir[1] = y;
