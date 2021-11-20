@@ -138,6 +138,27 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, Light *lights)
 	return illuminated_color;
 }
 
+/* 
+ * experimental mandelbulb
+ */
+Color
+cast_ray_fractal(vec3 orig, vec3 dir)
+{
+	float distance;
+	int steps;
+	for (steps = 0; steps < MAX_STEPS; steps++) {
+		vec3 current_ray;
+		glm_vec3_scale(dir, distance, current_ray);
+		
+
+		vec3 p;
+		glm_vec3_add(orig, current_ray, p);
+
+		float current_distance = 
+
+	}
+}
+
 /*
  * get the closest intersection of the input ray and the input spheres
  * returns 1 if there is an intersection, and 0 otherwise.
