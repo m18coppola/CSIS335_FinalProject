@@ -1,7 +1,7 @@
 /* 
  * Serial Ray Tracer
  *
- * Authors: Michael Coppola, Nicklaus Shelby, Andrew Towse
+ * Authors: Michael Coppola
  * Version: Fall 2022
  */
 
@@ -13,24 +13,42 @@
 #include "cglm/cglm.h"
 
 /* Data Types */
-typedef struct {
-	vec3 center;
-	float radius;
-} Sphere;
 
 typedef union {
 	struct {float r, g, b; };
 	vec3 v;
-} color_t;
+} Color;
+
+typedef struct {
+	Color diffuse_color;
+	// other members will be added later
+} Material;
+
+typedef struct {
+	vec3 center;
+	float radius;
+	Material mat;
+} Sphere;
+
+typedef struct {
+	vec3 pos;
+	float intensity;
+} Light;
+
+/* Constants */
+const Material DARKBLUE = {.diffuse_color.v = {0.2, 0.7, 0.8} };
+const Material DARKRED =  {.diffuse_color.v = {0.3, 0.1, 0.1} };
+const Material IVORY =  {.diffuse_color.v = {0.4, 0.4, 0.3} };
 
 /* Function Declarations */
 int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
-void cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere sphere, color_t *c);
+Color cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, Light *lights);
+int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, vec3 *hit, vec3 *N, Material *mat);
 
 /* Function Implementations */
 
 /* 
- * Determines if a a interesects a sphere, and where.
+ * Determines if a ray interesects a sphere, and where.
  * returns 0 if there is no intersection
  * returns 1 if there is an intersection
  *
@@ -59,9 +77,10 @@ sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0)
 		glm_vec3_scale(dir, dir_dot_v, pc);
 
 		/* calculate how far the center of the sphere is from the projection */
-		distance_from_center = fabs(glm_vec3_distance(sphere.center, pc));
+		distance_from_center = glm_vec3_distance(sphere.center, pc); 
 
-		if (distance_from_center > sphere.radius) { /* if the distance is too far from the ray, it does not intersect */
+		/* if the distance between the ray and the center is less than the radius, no intersection */
+		if (distance_from_center > sphere.radius) {
 			return 0;
 		} else {
 			/* use pythagorean's theorem to find the leg between the radius (hypotenuse) and our distance from center (other leg) */
@@ -76,21 +95,89 @@ sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0)
 	return 0;
 }
 
-void
-cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere sphere, color_t *color)
+/* 
+ * Takes a ray and traces it through space until it intersects with an object
+ *
+ * returns the material of the object it lands on or the material of the background if
+ * there is no intersection
+ *
+ * param ray_origin the starting position of the ray
+ * param ray_direction unit vector representing the direction of the ray
+ * param spheres array of spheres to be considered for intersection testing
+ * param lights array of lights to shine on spheres
+ */
+Color
+cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, Light *lights)
 {
-	float sphere_distance;
+	vec3 point, surface_normal;
+	Material material;
 
-	sphere_distance = FLT_MAX;
-	if (!sphere_ray_intersect(sphere, ray_origin, ray_direction, &sphere_distance)) {
-		color->r = 0.2;
-		color->g = 0.7;
-		color->b = 0.8;
-	} else {
-		color->r = 0.4;
-		color->g = 0.4;
-		color->b = 0.3;
+	/* return bg color if no intersection */
+	if (!first_intersect_of(ray_origin, ray_direction, spheres, &point, &surface_normal, &material)) {
+		return DARKBLUE.diffuse_color;
 	}
+
+	/* otherwise, calculate how much light is on it */
+	/* for each light, check angle between surface normal and light direction */
+	/* use that angle as a parameter to adjust brightness of output pixel */
+	/* the further the angle of the surface is tilted away from the light, proportionally darken */
+	float diffuse_light_intensity = 0;
+	for (int i = 0; i < 1; i++) { //TODO: fix hard coded range
+		/* vector subtraction then normalize to get unit vector */
+		vec3 light_dir;
+		glm_vec3_sub(lights[i].pos, point, light_dir);
+		glm_vec3_normalize(light_dir);
+		/* get angle by using the dot product of light direction and surface normal*/
+		float angle = glm_vec3_dot(light_dir, surface_normal);
+		/* add to the brightness along with the other lights */
+		diffuse_light_intensity += lights[i].intensity * ((angle > 0) ? angle : 0); 
+	}
+	/* create new color by multiplying the original one with the intensity scalar */
+	Color illuminated_color;
+	glm_vec3_scale(material.diffuse_color.v, diffuse_light_intensity, illuminated_color.v);
+	return illuminated_color;
+}
+
+/*
+ * get the closest intersection of the input ray and the input spheres
+ * returns 1 if there is an intersection, and 0 otherwise.
+ * 
+ * if there is an intersection, this function populates the parameter pointers with:
+ *
+ * *hit the position of the intersection
+ * *surface_normal a unit vector that is perpendicular with the tangential plane upon the position of intersection
+ * *mat the material of the intersected object
+ *
+ * param origin ray origin
+ * param dir direction of ray
+ * param spheres array of spheres to be considered for intersection
+ */
+
+int
+first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, vec3 *hit, vec3 *surface_normal, Material *mat)
+{
+	float sphere_distance = FLT_MAX;
+	for (int i = 0; i < 4; i++) { //TODO: fix hard coded range
+		float current_distance;
+		/* if this intersection is closer than the last calculated one */
+		if (sphere_ray_intersect(spheres[i], origin, dir, &current_distance) && current_distance < sphere_distance) {
+			/* update distance */
+			sphere_distance = current_distance;
+
+			/* the product of the distance on the direction is the position */
+			glm_vec3_scale(dir, current_distance, *hit);
+			/* transform from world coords to camera coords */
+			glm_vec3_add(origin, *hit, *hit);
+			/* make surface normal with the difference between the sphere center and the intersection */
+			glm_vec3_sub(*hit, spheres[i].center, *surface_normal);
+			glm_vec3_normalize(*surface_normal);
+			/* get material */
+			*mat = spheres[i].mat;
+		}
+	}
+	/* 1000 is the hardcoded clipping distance */
+	/* should meet our needs for now */
+	return sphere_distance < 1000;
 }
 
 int
@@ -98,7 +185,7 @@ main(int argc, char *argv[])
 {
 	int width;
 	int height;
-	color_t *framebuffer;
+	Color *framebuffer;
 	int i, j;
 	char *filename = "output.ppm";
 	float fov;
@@ -106,11 +193,22 @@ main(int argc, char *argv[])
 
 	width = 1024;
 	height = 768;
-	fov = M_PI/2.0;
-	Sphere ball = {.center = {-3, 0, -16}, .radius = 2};
+	fov = 90;
+	fov *= M_PI/180;
+
+	Sphere spheres[] = {
+		{.center = {7, 5, -18}, .radius = 4, .mat = IVORY},
+		{.center = {1.5, -0.5, -18}, .radius = 3, .mat = DARKRED},
+		{.center = {-1.0, -1.5, -12}, .radius = 2, .mat = DARKRED},
+		{.center = {-3, 0, -16}, .radius = 2, .mat = IVORY}
+	};
+
+	Light lights[] = {
+		{.pos = {-20, 20, 20}, .intensity = 1.5}
+	};
 
 	/* allocate an array of pixels for the image */
-	framebuffer = (color_t *)malloc(sizeof(color_t) * width * height);
+	framebuffer = (Color *)malloc(sizeof(Color) * width * height);
 
 	/* color each pixel using the ray cast results */
 	for (i = 0; i < height; i++) {
@@ -171,14 +269,13 @@ main(int argc, char *argv[])
 			float x =  (2*(i + 0.5)/(float)width  - 1)*tan(fov/2.)*width/(float)height;
 			float y = -(2*(j + 0.5)/(float)height - 1)*tan(fov/2.);
 			#endif
-
 			vec3 dir;
 			dir[0] = x;
 			dir[1] = y;
 			dir[2] = -1;
 			glm_vec3_normalize(dir);
 			vec3 origin = {0,0,0};
-			cast_ray(origin, dir, ball, &(framebuffer[j + i * width]));
+			framebuffer[j + i * width] = cast_ray(origin, dir, spheres, lights);
 		}
 	}
 
