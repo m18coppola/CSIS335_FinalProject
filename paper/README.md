@@ -16,6 +16,10 @@ The more we can document here, the less we have to use our brains when we have t
 	- https://ieeexplore.ieee.org/abstract/document/537389
 - Distribution of data for complex scenes
 	- https://ieeexplore.ieee.org/abstract/document/291533
+- KD-tree data divisions
+	- https://arthurflor23.medium.com/ray-tracing-with-kd-tree-from-scratch-9b218823bc00
+- triangle-ray intersection
+	- https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/ray-triangle-intersection-geometric-solution
 
 ## Further Research:
 - extreme parallelization by minimizing mutex locks with complex jobs (bag of bags of tasks?)
