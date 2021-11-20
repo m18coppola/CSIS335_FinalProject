@@ -1,5 +1,5 @@
 /* 
- * Serial Ray Tracer
+ * Serial Software Ray Tracer
  *
  * Authors: Michael Coppola
  * Version: Fall 2022
