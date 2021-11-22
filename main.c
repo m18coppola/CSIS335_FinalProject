@@ -44,8 +44,8 @@ const Material IVORY =  {.color.v = {0.4, 0.4, 0.3} , .specular_reflectance = 0.
 
 /* Function Declarations */
 int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
-Color cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, Light *lights);
-int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, vec3 *hit, vec3 *N, Material *mat);
+Color cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count);
+int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec3 *hit, vec3 *N, Material *mat);
 
 /* Function Implementations */
 
@@ -116,20 +116,20 @@ reflect(vec3 light_dir, vec3 normal, vec3 reflection_out)
  * param lights array of lights to shine on spheres
  */
 Color
-cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, Light *lights)
+cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count)
 {
 	vec3 intersection_pos, surface_normal;
 	Material material;
 
 	/* return bg color if no intersection */
-	if (!first_intersect_of(ray_origin, ray_direction, spheres, &intersection_pos, &surface_normal, &material)) {
+	if (!first_intersect_of(ray_origin, ray_direction, spheres, sphere_count, &intersection_pos, &surface_normal, &material)) {
 		return DARKBLUE.color;
 	}
 
 	/* otherwise, calculate how much light is on it */
 	float diffuse_intensity = 0;
 	float specular_intensity = 0;
-	for (int i = 0; i < 3; i++) { //TODO: fix hard coded range
+	for (int i = 0; i < light_count; i++) {
 		/* calc light direction */
 		vec3 light_dir;
 		glm_vec3_sub(lights[i].pos, intersection_pos, light_dir);
@@ -168,10 +168,10 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, Light *lights)
  */
 
 int
-first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, vec3 *hit, vec3 *surface_normal, Material *mat)
+first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec3 *hit, vec3 *surface_normal, Material *mat)
 {
 	float sphere_distance = FLT_MAX;
-	for (int i = 0; i < 4; i++) { //TODO: fix hard coded range
+	for (int i = 0; i < sphere_count; i++) {
 		float current_distance;
 		/* if this intersection is closer than the last calculated one */
 		if (sphere_ray_intersect(spheres[i], origin, dir, &current_distance) && current_distance < sphere_distance) {
@@ -291,7 +291,7 @@ main(int argc, char *argv[])
 			dir[2] = -1;
 			glm_vec3_normalize(dir);
 			vec3 origin = {0,0,0};
-			framebuffer[j + i * width] = cast_ray(origin, dir, spheres, lights);
+			framebuffer[j + i * width] = cast_ray(origin, dir, spheres, 4, lights, 3);
 		}
 	}
 
