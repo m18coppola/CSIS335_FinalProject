@@ -137,7 +137,10 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, Light *lights)
 		vec3 light_dir;
 		glm_vec3_sub(lights[i].pos, intersection_pos, light_dir);
 		glm_vec3_normalize(light_dir);
+
+		/* diffuse component */
 		diffuse_intensity += lights[i].intensity * glm_max(0.0, glm_vec3_dot(light_dir, surface_normal));
+		/* specular component */
 		vec3 reflect_dir;
 		reflect(light_dir, surface_normal, reflect_dir);
 		specular_intensity += pow(glm_max(0.0, glm_vec3_dot(reflect_dir, ray_direction)), material.shininess) * lights[i].intensity;
@@ -211,10 +214,10 @@ main(int argc, char *argv[])
 	fov *= M_PI/180;
 
 	Sphere spheres[] = {
-		{.center = {7, 5, -18}, .radius = 4, .mat = IVORY},
-		{.center = {1.5, -0.5, -18}, .radius = 3, .mat = DARKRED},
+		{.center = {-3.0, 0, -16}, .radius = 2, .mat = IVORY},
 		{.center = {-1.0, -1.5, -12}, .radius = 2, .mat = DARKRED},
-		{.center = {-3, 0, -16}, .radius = 2, .mat = IVORY}
+		{.center = {1.5, -0.5, -18}, .radius = 3, .mat = DARKRED},
+		{.center = {7, 5, -18}, .radius = 4, .mat = IVORY}
 	};
 
 	Light lights[] = {
@@ -312,10 +315,21 @@ main(int argc, char *argv[])
 	/* dump each pixel into the file */
 	unsigned char r,g,b;
 	for (i = 0; i < width * height; i++) {
-		/* normalize our colors */
 		Color color = framebuffer[i];
-		float max = glm_max(color.v[0], glm_max(color.v[1], color.v[2]));
-		if (max > 1.0) glm_vec3_scale(color.v, 1.0 / max, color.v);
+
+		/* normalize our colors */
+		/* it'll dim the other channels to adjust for overly bright blow-outs in other channels */
+
+		//float max = glm_max(color.v[0], glm_max(color.v[1], color.v[2]));
+		//if (max > 1.0) glm_vec3_scale(color.v, 1.0 / max, color.v);
+		
+		/* this will just cap the brightness instead */
+		/* only channels of the color that are blowing-out are dimmed */
+		for (int ind = 0; ind < 3; ind++) {
+			if (color.v[ind] > 1.0) {
+				color.v[ind] = 1.0;
+			}
+		}
 
 		/* our rgb channels range from 0.0 to 1.0 */
 		/* ppm expects 0 to 255, so we must convert */
