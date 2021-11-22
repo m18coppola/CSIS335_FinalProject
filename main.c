@@ -227,8 +227,8 @@ main(int argc, char *argv[])
 	framebuffer = (Color *)malloc(sizeof(Color) * width * height);
 
 	/* color each pixel using the ray cast results */
-	for (i = 0; i < height; i++) {
-		for (j = 0; j < width; j++) {
+	for (j = 0; j < height; j++) {
+		for (i = 0; i < width; i++) {
 
 			#if 0
 			/* Source: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-generating-camera-rays/generating-camera-rays */
@@ -291,7 +291,7 @@ main(int argc, char *argv[])
 			dir[2] = -1;
 			glm_vec3_normalize(dir);
 			vec3 origin = {0,0,0};
-			framebuffer[j + i * width] = cast_ray(origin, dir, spheres, 4, lights, 3);
+			framebuffer[i + j * width] = cast_ray(origin, dir, spheres, 4, lights, 3);
 		}
 	}
 
