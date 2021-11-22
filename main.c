@@ -20,8 +20,10 @@ typedef union {
 } Color;
 
 typedef struct {
-	Color diffuse_color;
-	// other members will be added later
+	Color color;
+	float specular_reflectance;
+	float diffuse_reflectance;
+	float shininess;
 } Material;
 
 typedef struct {
@@ -36,9 +38,9 @@ typedef struct {
 } Light;
 
 /* Constants */
-const Material DARKBLUE = {.diffuse_color.v = {0.2, 0.7, 0.8} };
-const Material DARKRED =  {.diffuse_color.v = {0.3, 0.1, 0.1} };
-const Material IVORY =  {.diffuse_color.v = {0.4, 0.4, 0.3} };
+const Material DARKBLUE = {.color.v = {0.2, 0.7, 0.8}};
+const Material DARKRED =  {.color.v = {0.3, 0.1, 0.1} , .specular_reflectance = 0.1, .diffuse_reflectance = 0.6, .shininess = 10.0};
+const Material IVORY =  {.color.v = {0.4, 0.4, 0.3} , .specular_reflectance = 0.3, .diffuse_reflectance = 0.9, .shininess = 50.0};
 
 /* Function Declarations */
 int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
@@ -95,6 +97,13 @@ sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0)
 	return 0;
 }
 
+void
+reflect(vec3 light_dir, vec3 normal, vec3 reflection_out)
+{
+	glm_vec3_scale(normal, 2.0 * glm_vec3_dot(light_dir, normal), reflection_out);
+	glm_vec3_sub(light_dir, reflection_out, reflection_out);
+}
+
 /* 
  * Takes a ray and traces it through space until it intersects with an object
  *
@@ -109,33 +118,38 @@ sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0)
 Color
 cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, Light *lights)
 {
-	vec3 point, surface_normal;
+	vec3 intersection_pos, surface_normal;
 	Material material;
 
 	/* return bg color if no intersection */
-	if (!first_intersect_of(ray_origin, ray_direction, spheres, &point, &surface_normal, &material)) {
-		return DARKBLUE.diffuse_color;
+	if (!first_intersect_of(ray_origin, ray_direction, spheres, &intersection_pos, &surface_normal, &material)) {
+		return DARKBLUE.color;
 	}
 
 	/* otherwise, calculate how much light is on it */
 	/* for each light, check angle between surface normal and light direction */
 	/* use that angle as a parameter to adjust brightness of output pixel */
 	/* the further the angle of the surface is tilted away from the light, proportionally darken */
-	float diffuse_light_intensity = 0;
-	for (int i = 0; i < 1; i++) { //TODO: fix hard coded range
-		/* vector subtraction then normalize to get unit vector */
+	float diffuse_intensity = 0;
+	float specular_intensity = 0;
+	for (int i = 0; i < 3; i++) { //TODO: fix hard coded range
+		/* calc light direction */
 		vec3 light_dir;
-		glm_vec3_sub(lights[i].pos, point, light_dir);
+		glm_vec3_sub(lights[i].pos, intersection_pos, light_dir);
 		glm_vec3_normalize(light_dir);
-		/* get angle by using the dot product of light direction and surface normal*/
-		float angle = glm_vec3_dot(light_dir, surface_normal);
-		/* add to the brightness along with the other lights */
-		diffuse_light_intensity += lights[i].intensity * ((angle > 0) ? angle : 0); 
+		diffuse_intensity += lights[i].intensity * glm_max(0.0, glm_vec3_dot(light_dir, surface_normal));
+		vec3 reflect_dir;
+		reflect(light_dir, surface_normal, reflect_dir);
+		specular_intensity += pow(glm_max(0.0, glm_vec3_dot(reflect_dir, ray_direction)), material.shininess) * lights[i].intensity;
 	}
+
 	/* create new color by multiplying the original one with the intensity scalar */
-	Color illuminated_color;
-	glm_vec3_scale(material.diffuse_color.v, diffuse_light_intensity, illuminated_color.v);
-	return illuminated_color;
+	Color output_color;
+	glm_vec3_scale(material.color.v, diffuse_intensity * material.diffuse_reflectance, output_color.v);
+	vec3 shine = {1.0, 1.0, 1.0};
+	glm_vec3_scale(shine, specular_intensity * material.specular_reflectance, shine);
+	glm_vec3_add(output_color.v, shine, output_color.v);
+	return output_color;
 }
 
 /*
@@ -204,7 +218,9 @@ main(int argc, char *argv[])
 	};
 
 	Light lights[] = {
-		{.pos = {-20, 20, 20}, .intensity = 1.5}
+		{.pos = {-20, 20, 20}, .intensity = 1.5},
+		{.pos = {30, 50, -25}, .intensity = 1.8},
+		{.pos = {30, 20, 30}, .intensity = 1.7}
 	};
 
 	/* allocate an array of pixels for the image */
@@ -296,11 +312,16 @@ main(int argc, char *argv[])
 	/* dump each pixel into the file */
 	unsigned char r,g,b;
 	for (i = 0; i < width * height; i++) {
+		/* normalize our colors */
+		Color color = framebuffer[i];
+		float max = glm_max(color.v[0], glm_max(color.v[1], color.v[2]));
+		if (max > 1.0) glm_vec3_scale(color.v, 1.0 / max, color.v);
+
 		/* our rgb channels range from 0.0 to 1.0 */
 		/* ppm expects 0 to 255, so we must convert */
-		r = 255 * framebuffer[i].r;
-		g = 255 * framebuffer[i].g;
-		b = 255 * framebuffer[i].b;
+		r = 255 * color.r;
+		g = 255 * color.g;
+		b = 255 * color.b;
 
 		/* write each channel of the pixel */
 		/* fwrite(adress_of_data, size_of_data_type, number_of_elements, file) */
