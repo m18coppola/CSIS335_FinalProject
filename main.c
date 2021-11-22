@@ -127,9 +127,6 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, Light *lights)
 	}
 
 	/* otherwise, calculate how much light is on it */
-	/* for each light, check angle between surface normal and light direction */
-	/* use that angle as a parameter to adjust brightness of output pixel */
-	/* the further the angle of the surface is tilted away from the light, proportionally darken */
 	float diffuse_intensity = 0;
 	float specular_intensity = 0;
 	for (int i = 0; i < 3; i++) { //TODO: fix hard coded range
@@ -146,7 +143,7 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, Light *lights)
 		specular_intensity += pow(glm_max(0.0, glm_vec3_dot(reflect_dir, ray_direction)), material.shininess) * lights[i].intensity;
 	}
 
-	/* create new color by multiplying the original one with the intensity scalar */
+	/* create new color by multiplying by diffuse component, and adding the shine */
 	Color output_color;
 	glm_vec3_scale(material.color.v, diffuse_intensity * material.diffuse_reflectance, output_color.v);
 	vec3 shine = {1.0, 1.0, 1.0};
@@ -317,12 +314,13 @@ main(int argc, char *argv[])
 	for (i = 0; i < width * height; i++) {
 		Color color = framebuffer[i];
 
+		#if 1
 		/* normalize our colors */
 		/* it'll dim the other channels to adjust for overly bright blow-outs in other channels */
-
-		//float max = glm_max(color.v[0], glm_max(color.v[1], color.v[2]));
-		//if (max > 1.0) glm_vec3_scale(color.v, 1.0 / max, color.v);
+		float max = glm_max(color.v[0], glm_max(color.v[1], color.v[2]));
+		if (max > 1.0) glm_vec3_scale(color.v, 1.0 / max, color.v);
 		
+		#else
 		/* this will just cap the brightness instead */
 		/* only channels of the color that are blowing-out are dimmed */
 		for (int ind = 0; ind < 3; ind++) {
@@ -330,6 +328,7 @@ main(int argc, char *argv[])
 				color.v[ind] = 1.0;
 			}
 		}
+		#endif
 
 		/* our rgb channels range from 0.0 to 1.0 */
 		/* ppm expects 0 to 255, so we must convert */
