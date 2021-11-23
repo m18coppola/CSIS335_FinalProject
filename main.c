@@ -62,39 +62,31 @@ int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count,
 int
 sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0)
 {
-	float dir_dot_v;
-	float distance_from_center;
-	float dist;
-
-	/* let v be a vector from ray origin to sphere center */
-	vec3 v;
-	glm_vec3_sub(sphere.center, origin, v);
-
-	/* calculate the length of the projection of the sphere center */
-	dir_dot_v = glm_vec3_dot(dir, v);
+	/* let L be a vector from the ray's origin and the center of the sphere*/
+	vec3 L;
+	glm_vec3_sub(sphere.center, origin, L);
 	
-	if (dir_dot_v > 0.0) { /* if the sphere center is in front of the ray */
-		/* let pc be a vector that is the projection of the sphere center onto the ray */
-		vec3 pc;
-		glm_vec3_scale(dir, dir_dot_v, pc);
+	/* let tc be the distance between the origin and */
+	/* the sphere center's projection onto the ray */
+	float tc = glm_vec3_dot(L, dir);
 
-		/* calculate how far the center of the sphere is from the projection */
-		distance_from_center = glm_vec3_distance(sphere.center, pc); 
+	/* let d2 be the distance between the sphere center and its projection, squared */
+	float d2 = glm_vec3_dot(L, L) - tc * tc;
 
-		/* if the distance between the ray and the center is less than the radius, no intersection */
-		if (distance_from_center > sphere.radius) {
-			return 0;
-		} else {
-			/* use pythagorean's theorem to find the leg between the radius (hypotenuse) and our distance from center (other leg) */
-			dist = sqrt(sphere.radius * sphere.radius - distance_from_center * distance_from_center);
+	float radius_squared = sphere.radius * sphere.radius;
 
-			/* the ray intersects at the projection minus the calculated leg */
-			*t0 = dir_dot_v - dist;
-			return 1;
-			
-		}
-	}
-	return 0;
+	if (d2 > radius_squared) return 0; //sphere is too far from ray
+
+	/* let t1c be the distance between the sphere's projection onto the ray and the point of intersection */
+	float t1c = sqrt(radius_squared - d2);
+
+	/* there could be two intersections, one from the ray entering the sphere, and one exiting the sphere */
+	/* t0 is first guess, t1 is second guess */
+	*t0 = tc - t1c;
+	float t1 = tc + t1c;
+	if (*t0 < 0) *t0 = t1; // the first guess was behind the ray origin, use the other
+	if (*t0 < 0) return 0; //the second guess was also behind the ray origin, no intersection
+	return 1;
 }
 
 void
@@ -135,12 +127,33 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count,
 		glm_vec3_sub(lights[i].pos, intersection_pos, light_dir);
 		glm_vec3_normalize(light_dir);
 
-		/* diffuse component */
-		diffuse_intensity += lights[i].intensity * glm_max(0.0, glm_vec3_dot(light_dir, surface_normal));
-		/* specular component */
-		vec3 reflect_dir;
-		reflect(light_dir, surface_normal, reflect_dir);
-		specular_intensity += pow(glm_max(0.0, glm_vec3_dot(reflect_dir, ray_direction)), material.shininess) * lights[i].intensity;
+		/* calc shadow */
+		float light_distance = glm_vec3_distance(lights[i].pos, intersection_pos);
+
+		vec3 shadow_origin;
+		/* we slightly move the shadow origin from the surface of the object */
+		/* to prevent it from intersecting with the sphere is lies on */
+		vec3 perturbation;
+		glm_vec3_scale(surface_normal, 1e-3, perturbation);
+		if (glm_vec3_dot(light_dir, surface_normal) < 0.0) {
+			glm_vec3_sub(intersection_pos, perturbation, shadow_origin);
+		} else {
+			glm_vec3_add(intersection_pos, perturbation, shadow_origin);
+		}
+
+		vec3 shadow_intersection, shadow_normal;
+		Material temp_mat;
+		/* we're shadowed if we intersect with a sphere before we hit the light */
+		int shadowed = (first_intersect_of(shadow_origin, light_dir, spheres, sphere_count, &shadow_intersection, &shadow_normal, &temp_mat) && glm_vec3_distance(shadow_intersection, shadow_origin) < light_distance);
+
+		if (!shadowed) {
+			/* diffuse component */
+			diffuse_intensity += lights[i].intensity * glm_max(0.0, glm_vec3_dot(light_dir, surface_normal));
+			/* specular component */
+			vec3 reflect_dir;
+			reflect(light_dir, surface_normal, reflect_dir);
+			specular_intensity += pow(glm_max(0.0, glm_vec3_dot(reflect_dir, ray_direction)), material.shininess) * lights[i].intensity;
+		}
 	}
 
 	/* create new color by multiplying by diffuse component, and adding the shine */
@@ -207,7 +220,7 @@ main(int argc, char *argv[])
 
 	width = 1024;
 	height = 768;
-	fov = 90;
+	fov = 57;
 	fov *= M_PI/180;
 
 	Sphere spheres[] = {
