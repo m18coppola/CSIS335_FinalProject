@@ -23,6 +23,7 @@ typedef struct {
 	Color color;
 	float specular_reflectance;
 	float diffuse_reflectance;
+	float mirror_reflectance;
 	float shininess;
 } Material;
 
@@ -39,12 +40,13 @@ typedef struct {
 
 /* Constants */
 const Material DARKBLUE = {.color.v = {0.2, 0.7, 0.8}};
-const Material DARKRED =  {.color.v = {0.3, 0.1, 0.1} , .specular_reflectance = 0.1, .diffuse_reflectance = 0.6, .shininess = 10.0};
-const Material IVORY =  {.color.v = {0.4, 0.4, 0.3} , .specular_reflectance = 0.3, .diffuse_reflectance = 0.9, .shininess = 50.0};
+const Material DARKRED =  {.color.v = {0.3, 0.1, 0.1} , .specular_reflectance = 0.1, .diffuse_reflectance = 0.9, .shininess = 10.0, .mirror_reflectance = 0.0};
+const Material IVORY =  {.color.v = {0.4, 0.4, 0.3} , .specular_reflectance = 0.3, .diffuse_reflectance = 0.6, .shininess = 50.0, .mirror_reflectance = 0.1};
+const Material MIRROR =  {.color.v = {1.0, 1.0, 1.0} , .specular_reflectance = 10.0, .diffuse_reflectance = 0.0, .shininess = 1425.0, .mirror_reflectance = 0.8};
 
 /* Function Declarations */
 int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
-Color cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count);
+Color cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth);
 int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec3 *hit, vec3 *N, Material *mat);
 
 /* Function Implementations */
@@ -108,17 +110,32 @@ reflect(vec3 light_dir, vec3 normal, vec3 reflection_out)
  * param lights array of lights to shine on spheres
  */
 Color
-cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count)
+cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth)
 {
 	vec3 intersection_pos, surface_normal;
 	Material material;
+	Color reflect_color;
 
 	/* return bg color if no intersection */
-	if (!first_intersect_of(ray_origin, ray_direction, spheres, sphere_count, &intersection_pos, &surface_normal, &material)) {
+	if (depth == 0 || !first_intersect_of(ray_origin, ray_direction, spheres, sphere_count, &intersection_pos, &surface_normal, &material)) {
 		return DARKBLUE.color;
 	}
 
-	/* otherwise, calculate how much light is on it */
+	/* calc reflection */
+	vec3 reflect_dir;
+	reflect(ray_direction, surface_normal, reflect_dir);
+
+	vec3 reflection_origin;
+	vec3 perturbation;
+	glm_vec3_scale(surface_normal, 1e-3, perturbation);
+	if (glm_vec3_dot(reflect_dir, surface_normal) < 0.0) {
+		glm_vec3_sub(intersection_pos, perturbation, reflection_origin);
+	} else {
+		glm_vec3_add(intersection_pos, perturbation, reflection_origin);
+	}
+	reflect_color = cast_ray(reflection_origin, reflect_dir, spheres, sphere_count, lights, light_count, depth - 1);
+
+	/* calculate how much light is on point */
 	float diffuse_intensity = 0;
 	float specular_intensity = 0;
 	for (int i = 0; i < light_count; i++) {
@@ -127,14 +144,16 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count,
 		glm_vec3_sub(lights[i].pos, intersection_pos, light_dir);
 		glm_vec3_normalize(light_dir);
 
+		
+
+
+		
 		/* calc shadow */
 		float light_distance = glm_vec3_distance(lights[i].pos, intersection_pos);
 
 		vec3 shadow_origin;
 		/* we slightly move the shadow origin from the surface of the object */
 		/* to prevent it from intersecting with the sphere is lies on */
-		vec3 perturbation;
-		glm_vec3_scale(surface_normal, 1e-3, perturbation);
 		if (glm_vec3_dot(light_dir, surface_normal) < 0.0) {
 			glm_vec3_sub(intersection_pos, perturbation, shadow_origin);
 		} else {
@@ -150,9 +169,9 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count,
 			/* diffuse component */
 			diffuse_intensity += lights[i].intensity * glm_max(0.0, glm_vec3_dot(light_dir, surface_normal));
 			/* specular component */
-			vec3 reflect_dir;
-			reflect(light_dir, surface_normal, reflect_dir);
-			specular_intensity += pow(glm_max(0.0, glm_vec3_dot(reflect_dir, ray_direction)), material.shininess) * lights[i].intensity;
+			vec3 light_reflection;
+			reflect(light_dir, surface_normal, light_reflection);
+			specular_intensity += pow(glm_max(0.0, glm_vec3_dot(light_reflection, ray_direction)), material.shininess) * lights[i].intensity;
 		}
 	}
 
@@ -162,6 +181,8 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count,
 	vec3 shine = {1.0, 1.0, 1.0};
 	glm_vec3_scale(shine, specular_intensity * material.specular_reflectance, shine);
 	glm_vec3_add(output_color.v, shine, output_color.v);
+	glm_vec3_scale(reflect_color.v, material.mirror_reflectance, reflect_color.v);
+	glm_vec3_add(output_color.v, reflect_color.v, output_color.v);
 	return output_color;
 }
 
@@ -225,9 +246,9 @@ main(int argc, char *argv[])
 
 	Sphere spheres[] = {
 		{.center = {-3.0, 0, -16}, .radius = 2, .mat = IVORY},
-		{.center = {-1.0, -1.5, -12}, .radius = 2, .mat = DARKRED},
+		{.center = {-1.0, -1.5, -12}, .radius = 2, .mat = MIRROR},
 		{.center = {1.5, -0.5, -18}, .radius = 3, .mat = DARKRED},
-		{.center = {7, 5, -18}, .radius = 4, .mat = IVORY}
+		{.center = {7, 5, -18}, .radius = 4, .mat = MIRROR}
 	};
 
 	Light lights[] = {
@@ -304,7 +325,7 @@ main(int argc, char *argv[])
 			dir[2] = -1;
 			glm_vec3_normalize(dir);
 			vec3 origin = {0,0,0};
-			framebuffer[i + j * width] = cast_ray(origin, dir, spheres, 4, lights, 3);
+			framebuffer[i + j * width] = cast_ray(origin, dir, spheres, 4, lights, 3, 4);
 		}
 	}
 
