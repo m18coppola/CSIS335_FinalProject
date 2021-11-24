@@ -21,10 +21,14 @@ typedef union {
 
 typedef struct {
 	Color color;
-	float specular_reflectance;
+
 	float diffuse_reflectance;
+	float specular_reflectance;
 	float mirror_reflectance;
+	float refraction_reflectance;
+
 	float shininess;
+	float refractive_index;
 } Material;
 
 typedef struct {
@@ -40,16 +44,102 @@ typedef struct {
 
 /* Constants */
 const Material DARKBLUE = {.color.v = {0.2, 0.7, 0.8}};
-const Material DARKRED =  {.color.v = {0.3, 0.1, 0.1} , .specular_reflectance = 0.1, .diffuse_reflectance = 0.9, .shininess = 10.0, .mirror_reflectance = 0.0};
-const Material IVORY =  {.color.v = {0.4, 0.4, 0.3} , .specular_reflectance = 0.3, .diffuse_reflectance = 0.6, .shininess = 50.0, .mirror_reflectance = 0.1};
-const Material MIRROR =  {.color.v = {1.0, 1.0, 1.0} , .specular_reflectance = 10.0, .diffuse_reflectance = 0.0, .shininess = 1425.0, .mirror_reflectance = 0.8};
+
+const Material DARKRED =  {
+	.color.v = {0.3, 0.1, 0.1} ,
+
+	.diffuse_reflectance = 0.9, 
+	.specular_reflectance = 0.1,
+	.mirror_reflectance = 0.0,
+	.refraction_reflectance = 0.0,
+
+	.shininess = 10.0, 
+	.refractive_index = 1.0,
+};
+
+const Material IVORY =  {
+	.color.v = {0.4, 0.4, 0.3} , 
+
+	.diffuse_reflectance = 0.6, 
+	.specular_reflectance = 0.3, 
+	.mirror_reflectance = 0.1,
+	.refraction_reflectance = 0.0,
+
+	.shininess = 50.0, 
+	.refractive_index = 1.0,
+};
+
+const Material MIRROR =  {
+	.color.v = {1.0, 1.0, 1.0} , 
+
+	.diffuse_reflectance = 0.0, 
+	.specular_reflectance = 10.0, 
+	.mirror_reflectance = 0.8,
+	.refraction_reflectance = 0.0,
+
+	.shininess = 1425.0, 
+	.refractive_index = 1.0,
+};
+
+const Material GLASS =  {
+	.color.v = {0.6, 0.7, 0.8} , 
+
+	.diffuse_reflectance = 0.0, 
+	.specular_reflectance = 0.5, 
+	.mirror_reflectance = 0.1,
+	.refraction_reflectance = 0.8,
+
+	.shininess = 125.0, 
+	.refractive_index = 1.5,
+};
 
 /* Function Declarations */
+void refract(vec3 incomming, vec3 normal, float refractive_index, vec3 out);
 int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
+void reflect(vec3 light_dir, vec3 normal, vec3 reflection_out);
 Color cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth);
 int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec3 *hit, vec3 *N, Material *mat);
 
 /* Function Implementations */
+
+/* 
+ * creates a new vector that is a refraction of the incoming vector.
+ * The incomming angle is calculated with the incomming vector and the surface normal
+ * the outgoing vector is calculated with the refractive index, and stored in the out vector
+ *
+ * This function uses textbook Snell's law.
+ * See: https://en.wikipedia.org/wiki/Snell%27s_law#Vector_form
+ */
+void
+refract(vec3 incomming, vec3 normal, float refractive_index, vec3 out)
+{
+	float cosi = -1.0 * glm_max(-1.0, glm_min(1.0, glm_vec3_dot(incomming, normal)));
+	float etai = 1.0;
+	float etat = refractive_index;
+	vec3 n;
+	glm_vec3_dup(normal, n);
+	
+	if (cosi < 0) { /* the ray is in the object, swap etai and etat, invert normal and cosi */
+		cosi = -cosi;
+
+		float temp = etai;
+		etai = etat;
+		etat = temp;
+
+		glm_vec3_negate(n);
+	}
+
+	float eta = etai / etat;
+	float k = 1 - eta * eta * (1 - cosi * cosi);
+
+	if (k < 0) {
+		glm_vec3_zero(out);
+	} else {
+		glm_vec3_scale(incomming, eta, out);
+		glm_vec3_scale(n, eta * cosi - sqrt(k), n);
+		glm_vec3_add(out, n, out);
+	}
+}
 
 /* 
  * Determines if a ray interesects a sphere, and where.
@@ -119,25 +209,40 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count,
 	vec3 intersection_pos, surface_normal;
 	Material material;
 	Color reflect_color;
+	Color refract_color;
 
 	/* return bg color if no intersection */
 	if (depth == 0 || !first_intersect_of(ray_origin, ray_direction, spheres, sphere_count, &intersection_pos, &surface_normal, &material)) {
 		return DARKBLUE.color;
 	}
 
+	vec3 perturbation;
+	glm_vec3_scale(surface_normal, 1e-3, perturbation);
+
 	/* calc reflection */
 	vec3 reflect_dir;
 	reflect(ray_direction, surface_normal, reflect_dir);
 
+	vec3 refract_dir;
+	refract(ray_direction, surface_normal, material.refractive_index, refract_dir);
+
 	vec3 reflection_origin;
-	vec3 perturbation;
-	glm_vec3_scale(surface_normal, 1e-3, perturbation);
 	if (glm_vec3_dot(reflect_dir, surface_normal) < 0.0) {
 		glm_vec3_sub(intersection_pos, perturbation, reflection_origin);
 	} else {
 		glm_vec3_add(intersection_pos, perturbation, reflection_origin);
 	}
+
+	vec3 refraction_origin;
+	if (glm_vec3_dot(refract_dir, surface_normal) < 0.0) {
+		glm_vec3_sub(intersection_pos, perturbation, refraction_origin);
+	} else {
+		glm_vec3_add(intersection_pos, perturbation, refraction_origin);
+	}
+
 	reflect_color = cast_ray(reflection_origin, reflect_dir, spheres, sphere_count, lights, light_count, depth - 1);
+
+	refract_color = cast_ray(refraction_origin, refract_dir, spheres, sphere_count, lights, light_count, depth - 1);
 
 	/* calculate how much light is on point */
 	float diffuse_intensity = 0;
@@ -182,11 +287,17 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count,
 	/* create new color by multiplying by diffuse component, and adding the shine */
 	Color output_color;
 	glm_vec3_scale(material.color.v, diffuse_intensity * material.diffuse_reflectance, output_color.v);
+
 	vec3 shine = {1.0, 1.0, 1.0};
 	glm_vec3_scale(shine, specular_intensity * material.specular_reflectance, shine);
 	glm_vec3_add(output_color.v, shine, output_color.v);
+
 	glm_vec3_scale(reflect_color.v, material.mirror_reflectance, reflect_color.v);
 	glm_vec3_add(output_color.v, reflect_color.v, output_color.v);
+
+	vec3 refraction_component;
+	glm_vec3_scale(refract_color.v, material.refraction_reflectance, refraction_component);
+	glm_vec3_add(refraction_component, output_color.v, output_color.v);
 	return output_color;
 }
 
@@ -250,7 +361,7 @@ main(int argc, char *argv[])
 
 	Sphere spheres[] = {
 		{.center = {-3.0, 0, -16}, .radius = 2, .mat = IVORY},
-		{.center = {-1.0, -1.5, -12}, .radius = 2, .mat = MIRROR},
+		{.center = {-1.0, -1.5, -12}, .radius = 2, .mat = GLASS},
 		{.center = {1.5, -0.5, -18}, .radius = 3, .mat = DARKRED},
 		{.center = {7, 5, -18}, .radius = 4, .mat = MIRROR}
 	};
