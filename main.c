@@ -91,6 +91,10 @@ sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0)
 	return 1;
 }
 
+/* 
+ * Reflects the first vector over the axis the second vector represents.
+ * The result is stored in the third vector
+ */
 void
 reflect(vec3 light_dir, vec3 normal, vec3 reflection_out)
 {
