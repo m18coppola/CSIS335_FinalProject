@@ -57,6 +57,32 @@ const Material DARKRED =  {
 	.refractive_index = 1.0,
 };
 
+const Material WHITE =  {
+	.color.v = {0.3, 0.3, 0.3} ,
+
+	.diffuse_reflectance = 0.9, 
+	.specular_reflectance = 0.1,
+	.mirror_reflectance = 0.0,
+	.refraction_reflectance = 0.0,
+
+	.shininess = 10.0, 
+	.refractive_index = 1.0,
+};
+
+const Material YELLOW =  {
+	.color.v = {0.3, 0.2, 0.1} ,
+
+	.diffuse_reflectance = 0.9, 
+	.specular_reflectance = 0.1,
+	.mirror_reflectance = 0.0,
+	.refraction_reflectance = 0.0,
+
+	.shininess = 10.0, 
+	.refractive_index = 1.0,
+};
+
+
+
 const Material IVORY =  {
 	.color.v = {0.4, 0.4, 0.3} , 
 
@@ -338,9 +364,31 @@ first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec
 			*mat = spheres[i].mat;
 		}
 	}
-	/* 1000 is the hardcoded clipping distance */
-	/* should meet our needs for now */
-	return sphere_distance < 1000;
+
+	/* CHECKERBOARD MATH */
+	//TODO: factor this out somehow
+	
+	float plane_dist = FLT_MAX;
+	if (fabs(dir[1]) > 1e-3) {
+		float d = -(origin[1]+4)/dir[1]; /* plane at y = -4 */
+		vec3 pt;
+		glm_vec3_scale(dir, d, pt);
+		glm_vec3_add(origin, pt, pt);
+
+		if (d > 0 && fabs(pt[0]) < 10 && pt[2] < -10 && pt[2] > -30 && d < sphere_distance) {
+			plane_dist = d;
+			glm_vec3_dup(pt, *hit);
+			glm_vec3_zero(*surface_normal);
+			(*surface_normal)[1] = 1.0;
+			if (((int)(0.5 * (*hit)[0] + 1000) + (int)(0.5 * (*hit)[2])) & 1) {
+				*mat = WHITE;
+			} else {
+				*mat = YELLOW;
+			}
+		}
+	}
+	
+	return glm_min(sphere_distance, plane_dist) < 1000;
 }
 
 int
