@@ -446,6 +446,32 @@ first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, Tri
 		}
 	}
 
+	float triangle_distance = FLT_MAX;
+	for (int i = 0; i < tri_count; i++) {
+		float current_distance;
+		/* if this intersection is closer than the last calculated one */
+		if (triangle_ray_intersect(tri[i], origin, dir, &current_distance) && current_distance < triangle_distance) {
+			/* update distance */
+			triangle_distance = current_distance;
+
+			/* the product of the distance on the direction is the position */
+			glm_vec3_scale(dir, current_distance, *hit);
+			/* transform from world coords to camera coords */
+			glm_vec3_add(origin, *hit, *hit);
+			/* make surface normal with the difference between the triangle face and the intersection */
+			vec3 v0v1;
+			glm_vec3_sub(tri[i].v1, tri[i].v0, v0v1);
+			vec3 v0v2;
+			glm_vec3_sub(tri[i].v2, tri[i].v0, v0v2);
+			vec3 cp;
+			glm_vec3_cross(v0v1, v0v2, cp);
+			glm_vec3_sub(*hit, cp, *surface_normal);
+			glm_vec3_normalize(*surface_normal);
+			/* get material */
+			*mat = tri[i].mat;
+		}
+	}
+
 	/* CHECKERBOARD MATH */
 	//TODO: factor this out somehow
 	
