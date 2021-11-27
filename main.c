@@ -38,6 +38,14 @@ typedef struct {
 } Sphere;
 
 typedef struct {
+	vec3 v0;
+	vec3 v1;
+	vec3 v2;
+
+	Material mat;
+} Triangle;
+
+typedef struct {
 	vec3 pos;
 	float intensity;
 } Light;
@@ -123,8 +131,9 @@ const Material GLASS =  {
 void refract(vec3 incomming, vec3 normal, float refractive_index, vec3 out);
 int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
 void reflect(vec3 light_dir, vec3 normal, vec3 reflection_out);
-Color cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth);
-int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec3 *hit, vec3 *N, Material *mat);
+Color cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Triangle *tri, int tri_count, Light *lights, int light_count, int depth);
+int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, Triangle *tri, int tri_count, vec3 *hit, vec3 *N, Material *mat);
+int triangle_ray_intersect(Triangle triangle, vec3 origin, vec3 dir, float *t0);
 
 /* Function Implementations */
 
@@ -207,6 +216,78 @@ sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0)
 	return 1;
 }
 
+/*
+ * Determines if a ray interesects a sphere, and where.
+ * returns 0 if there is no intersection
+ * returns 1 if there is an intersection
+ *
+ * If there is an intersection, t0 will be populated with the distance
+ * between the ray's origin and the intersection.
+ *
+ * See: http://www.lighthouse3d.com/tutorials/maths/ray-sphere-intersection/
+ */
+int
+triangle_ray_intersect(Triangle tri, vec3 orig, vec3 dir, float *t0)
+{
+	float kEpsilon = 1e-8;
+
+	/* Compute the normal of the plane. */
+	vec3 v0v1;
+	glm_vec3_sub(tri.v1, tri.v0, v0v1);
+	vec3 v0v2;
+	glm_vec3_sub(tri.v2, tri.v0, v0v2);
+	/* Compute the crossproduct. */
+	vec3 cp;
+	glm_vec3_cross(v0v1, v0v2, cp);
+	//TODO FIGURE OUT WHAT IS GOING ON WITH THIS UNUSED LINE
+	//float area2 = cp.length();
+
+	/* Check if ray and plane are parallel. */
+	float cpRayDirection = glm_vec3_dot(cp, dir);
+	if (fabs(cpRayDirection) < kEpsilon)
+		return 0;
+
+	/* Compare D parameter using equation 2. */
+	float d = glm_vec3_dot(cp, tri.v0);
+
+	*t0 = (glm_vec3_dot(cp, orig) + d) / cpRayDirection;
+	if (*t0 < 0)
+		return 0;
+
+	vec3 P;
+	glm_vec3_mul(t0, dir, P);
+	glm_vec3_add(orig, P, P);
+
+	vec3 C;
+
+	vec3 edge0;
+	glm_vec3_sub(tri.v1, tri.v0, edge0);
+	vec3 vp0;
+	glm_vec3_sub(P, tri.v0, vp0);
+	glm_vec3_cross(edge0, vp0, C);
+	if (glm_vec3_dot(cp, C) < 0)
+		return 0;
+
+	vec3 edge1;
+	glm_vec3_sub(tri.v2, tri.v1, edge1);
+	vec3 vp1;
+	glm_vec3_sub(P, tri.v1, vp1);
+	glm_vec3_cross(edge1, vp1, C);
+	if (glm_vec3_dot(cp, C) < 0)
+		return 0;
+
+	vec3 edge2;
+	glm_vec3_sub(tri.v0, tri.v2, edge2);
+	vec3 vp2;
+	glm_vec3_sub(P, tri.v2, vp2);
+	glm_vec3_cross(edge2, vp2, C);
+	if (glm_vec3_dot(cp, C) < 0)
+		return 0;
+
+	return 1;
+
+}
+
 /* 
  * Reflects the first vector over the axis the second vector represents.
  * The result is stored in the third vector
@@ -230,7 +311,7 @@ reflect(vec3 light_dir, vec3 normal, vec3 reflection_out)
  * param lights array of lights to shine on spheres
  */
 Color
-cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth)
+cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Triangle *tri, int tri_count, Light *lights, int light_count, int depth)
 {
 	vec3 intersection_pos, surface_normal;
 	Material material;
@@ -238,7 +319,7 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count,
 	Color refract_color;
 
 	/* return bg color if no intersection */
-	if (depth == 0 || !first_intersect_of(ray_origin, ray_direction, spheres, sphere_count, &intersection_pos, &surface_normal, &material)) {
+	if (depth == 0 || !first_intersect_of(ray_origin, ray_direction, spheres, sphere_count, tri, tri_count, &intersection_pos, &surface_normal, &material)) {
 		return DARKBLUE.color;
 	}
 
@@ -266,9 +347,9 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count,
 		glm_vec3_add(intersection_pos, perturbation, refraction_origin);
 	}
 
-	reflect_color = cast_ray(reflection_origin, reflect_dir, spheres, sphere_count, lights, light_count, depth - 1);
+	reflect_color = cast_ray(reflection_origin, reflect_dir, spheres, sphere_count, tri, tri_count, lights, light_count, depth - 1);
 
-	refract_color = cast_ray(refraction_origin, refract_dir, spheres, sphere_count, lights, light_count, depth - 1);
+	refract_color = cast_ray(refraction_origin, refract_dir, spheres, sphere_count, tri, tri_count, lights, light_count, depth - 1);
 
 	/* calculate how much light is on point */
 	float diffuse_intensity = 0;
@@ -298,7 +379,7 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count,
 		vec3 shadow_intersection, shadow_normal;
 		Material temp_mat;
 		/* we're shadowed if we intersect with a sphere before we hit the light */
-		int shadowed = (first_intersect_of(shadow_origin, light_dir, spheres, sphere_count, &shadow_intersection, &shadow_normal, &temp_mat) && glm_vec3_distance(shadow_intersection, shadow_origin) < light_distance);
+		int shadowed = (first_intersect_of(shadow_origin, light_dir, spheres, sphere_count, tri, tri_count, &shadow_intersection, &shadow_normal, &temp_mat) && glm_vec3_distance(shadow_intersection, shadow_origin) < light_distance);
 
 		if (!shadowed) {
 			/* diffuse component */
@@ -343,7 +424,7 @@ cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count,
  */
 
 int
-first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec3 *hit, vec3 *surface_normal, Material *mat)
+first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, Triangle *tri, int tri_count, vec3 *hit, vec3 *surface_normal, Material *mat)
 {
 	float sphere_distance = FLT_MAX;
 	for (int i = 0; i < sphere_count; i++) {
@@ -412,6 +493,10 @@ main(int argc, char *argv[])
 		{.center = {-1.0, -1.5, -12}, .radius = 2, .mat = GLASS},
 		{.center = {1.5, -0.5, -18}, .radius = 3, .mat = DARKRED},
 		{.center = {7, 5, -18}, .radius = 4, .mat = MIRROR}
+	};
+
+	Triangle triangle[] = {
+		{.v0 = {-2, 0, 1.5}, .v1 = {0.5, 1, 0}, .v2 = {-1, -2 , -2.5}, .mat = IVORY}
 	};
 
 	Light lights[] = {
@@ -488,7 +573,7 @@ main(int argc, char *argv[])
 			dir[2] = -1;
 			glm_vec3_normalize(dir);
 			vec3 origin = {0,0,0};
-			framebuffer[i + j * width] = cast_ray(origin, dir, spheres, 4, lights, 3, 4);
+			framebuffer[i + j * width] = cast_ray(origin, dir, spheres, 4, triangle, 1, lights, 3, 4);
 		}
 	}
 
