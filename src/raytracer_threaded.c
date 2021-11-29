@@ -1,5 +1,7 @@
 /* 
- * Serial Software Ray Tracer
+ * Multithreaded Software Ray Tracer
+ *
+ * UNIMPLEMENTED
  *
  * Authors: Michael Coppola
  * Version: Fall 2022

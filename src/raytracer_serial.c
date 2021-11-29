@@ -124,6 +124,7 @@ int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
 void reflect(vec3 light_dir, vec3 normal, vec3 reflection_out);
 Color cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth);
 int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec3 *hit, vec3 *N, Material *mat);
+int write_frame(Color *framebuffer, int width, int height, long unsigned int frameID);
 
 /* Function Implementations */
 
@@ -391,6 +392,64 @@ first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec
 }
 
 int
+write_frame(Color *framebuffer, int width, int height, long unsigned int frameID)
+{
+	int i;
+	char filename[32];
+	FILE *file;
+
+	sprintf(filename, "frames/frame_%lu.ppm", frameID);
+	file = fopen(filename, "wb"); /* w for write flag, b for binary mode */
+
+	if (file == NULL) {
+		fprintf(stderr, "Cannot open %s for writting. Exiting.\n", filename);
+		return -1;
+	}
+
+	/* write magic numbers for portable pixmap format */
+	/* P6 as magic number means full-color binary-type image file */
+	/* followed by width then height */
+	/* See: https://en.wikipedia.org/wiki/Netpbm */
+	fprintf(file, "P6\n%d %d\n255\n", width, height);
+
+	/* dump each pixel into the file */
+	unsigned char r,g,b;
+	for (i = 0; i < width * height; i++) {
+		Color color = framebuffer[i];
+
+		#if 1
+		/* normalize our colors */
+		/* it'll dim the other channels to adjust for overly bright blow-outs in other channels */
+		float max = glm_max(color.v[0], glm_max(color.v[1], color.v[2]));
+		if (max > 1.0) glm_vec3_scale(color.v, 1.0 / max, color.v);
+		
+		#else
+		/* this will just cap the brightness instead */
+		/* only channels of the color that are blowing-out are dimmed */
+		for (int ind = 0; ind < 3; ind++) {
+			if (color.v[ind] > 1.0) {
+				color.v[ind] = 1.0;
+			}
+		}
+		#endif
+
+		/* our rgb channels range from 0.0 to 1.0 */
+		/* ppm expects 0 to 255, so we must convert */
+		r = 255 * color.r;
+		g = 255 * color.g;
+		b = 255 * color.b;
+
+		/* write each channel of the pixel */
+		/* fwrite(adress_of_data, size_of_data_type, number_of_elements, file) */
+		fwrite(&r, sizeof(char), 1, file);
+		fwrite(&g, sizeof(char), 1, file);
+		fwrite(&b, sizeof(char), 1, file);
+	}
+	fclose(file);
+	return -1;
+}
+
+int
 main(int argc, char *argv[])
 {
 	int width;
@@ -491,55 +550,12 @@ main(int argc, char *argv[])
 		}
 	}
 
-	FILE *file;
-	file = fopen(filename, "wb"); /* w for write flag, b for binary mode */
-
-	if (file == NULL) {
-		fprintf(stderr, "Cannot open %s for writting. Exiting.\n", filename);
+	/* save render */
+	if (write_frame(framebuffer, width, height, 0) == -1) {
 		return -1;
 	}
 
-	/* write magic numbers for portable pixmap format */
-	/* P6 as magic number means full-color binary-type image file */
-	/* followed by width then height */
-	/* See: https://en.wikipedia.org/wiki/Netpbm */
-	fprintf(file, "P6\n%d %d\n255\n", width, height);
-
-	/* dump each pixel into the file */
-	unsigned char r,g,b;
-	for (i = 0; i < width * height; i++) {
-		Color color = framebuffer[i];
-
-		#if 1
-		/* normalize our colors */
-		/* it'll dim the other channels to adjust for overly bright blow-outs in other channels */
-		float max = glm_max(color.v[0], glm_max(color.v[1], color.v[2]));
-		if (max > 1.0) glm_vec3_scale(color.v, 1.0 / max, color.v);
-		
-		#else
-		/* this will just cap the brightness instead */
-		/* only channels of the color that are blowing-out are dimmed */
-		for (int ind = 0; ind < 3; ind++) {
-			if (color.v[ind] > 1.0) {
-				color.v[ind] = 1.0;
-			}
-		}
-		#endif
-
-		/* our rgb channels range from 0.0 to 1.0 */
-		/* ppm expects 0 to 255, so we must convert */
-		r = 255 * color.r;
-		g = 255 * color.g;
-		b = 255 * color.b;
-
-		/* write each channel of the pixel */
-		/* fwrite(adress_of_data, size_of_data_type, number_of_elements, file) */
-		fwrite(&r, sizeof(char), 1, file);
-		fwrite(&g, sizeof(char), 1, file);
-		fwrite(&b, sizeof(char), 1, file);
-	}
-	fclose(file);
-
+	
 	/* clean up */
 	free(framebuffer);
 
