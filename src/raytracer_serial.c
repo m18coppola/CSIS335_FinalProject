@@ -125,6 +125,7 @@ void reflect(vec3 light_dir, vec3 normal, vec3 reflection_out);
 Color cast_ray(vec3 ray_origin, vec3 ray_direction, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth);
 int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec3 *hit, vec3 *N, Material *mat);
 int write_frame(Color *framebuffer, int width, int height, long unsigned int frameID);
+void render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, double fov);
 
 /* Function Implementations */
 
@@ -449,6 +450,28 @@ write_frame(Color *framebuffer, int width, int height, long unsigned int frameID
 	return -1;
 }
 
+void
+render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, double fov)
+{
+
+	int i, j;
+
+	for (j = 0; j < height; j++) {
+		for (i = 0; i < width; i++) {
+			float x =  (2*(i + 0.5)/(float)width  - 1)*tan(fov/2.)*width/(float)height;
+			float y = -(2*(j + 0.5)/(float)height - 1)*tan(fov/2.);
+			vec3 dir;
+			dir[0] = x;
+			dir[1] = y;
+			dir[2] = -1;
+			glm_vec3_normalize(dir);
+			vec3 origin = {0,0,0};
+			framebuffer[i + j * width] = cast_ray(origin, dir, spheres, sphere_count, lights, light_count, depth);
+		}
+	}
+
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -456,12 +479,14 @@ main(int argc, char *argv[])
 	int height;
 	Color *framebuffer;
 	int i, j;
+	int reflective_depth;
 	char *filename = "output.ppm";
 	float fov;
 	
 
 	width = 1024;
 	height = 768;
+	reflective_depth = 4;
 	fov = 57;
 	fov *= M_PI/180;
 
@@ -471,85 +496,20 @@ main(int argc, char *argv[])
 		{.center = {1.5, -0.5, -18}, .radius = 3, .mat = DARKRED},
 		{.center = {7, 5, -18}, .radius = 4, .mat = MIRROR}
 	};
+	int sphere_count = 4;
 
 	Light lights[] = {
 		{.pos = {-20, 20, 20}, .intensity = 1.5},
 		{.pos = {30, 50, -25}, .intensity = 1.8},
 		{.pos = {30, 20, 30}, .intensity = 1.7}
 	};
+	int light_count = 3;
 
 	/* allocate an array of pixels for the image */
 	framebuffer = (Color *)malloc(sizeof(Color) * width * height);
 
-	/* color each pixel using the ray cast results */
-	for (j = 0; j < height; j++) {
-		for (i = 0; i < width; i++) {
-
-			#if 0
-			/* Source: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-generating-camera-rays/generating-camera-rays */
-
-			/* 
- 			 * Imagine our 3d scene. To make an image of it would
- 			 * be like standing in the scene and holding up a hollow picture frame.
- 			 * In our program, the image file is similar to the picture frame.
- 			 * To fill in the picture frame, we must calculate the path the light
- 			 * travels through the picture frame and into our eye. In ray tracing, we
- 			 * minimize workload by following the path backwards, so in a way we cast
- 			 * a ray from our eye, through the frame and out onto the objects in the
- 			 * scene. Once we see that the ray has intersected with an object, we can
- 			 * conclude that the color of the light ray is the color of the object it
- 			 * landed upon. We can cast a ray through each pixel of the frame to
- 			 * determine what color each pixel should be.
- 			 */
-
-			/* Eye should always be 1.0 away from the picture frame */
-			/* Camera should be pointed in the -z direction (right-hand rule) */
-			
-			/* each pixel's x/y value is between 0 and width/height (raster coords)*/
-			/* we need to convert this to be between 0 and 1 (normalized device coords)*/
-			/* we add 0.5 (half of a pixel) to center the ray onto the cell */
-
-			float x_ndc = (i + 0.5)/(float)width;
-			float y_ndc = (j + 0.5)/(float)height;
-
-			/* now we map this from 0to1 to -1to1 */
-			float x_frame = 2 * x_ndc - 1;
-			float y_frame = 1 - 2 * y_ndc;
-
-			/* We've made the assumption that the screen is square when we normalized the coords */
-			/* We will correct this by multiplying our x by our aspect ratio */
-			float aspect_ratio = (float)width/(float)height;
-			x_frame *= aspect_ratio;
-
-			/* now we will account for the field of view */
-			/* We'll achieve this by growing or shrinking the frame height to the desired fov */
-			/* we find by how much with trig */
-			/* See: https://www.scratchapixel.com/images/upload/ray-tracing-camera/camprofile.png? */
-			/* the frame and the eye are fixed at 1 distance unit apart */
-			/* the ray assumes the fov is 90 degrees , so we can multiply by tan(fov/2) to scale proportionally */
-
-			x_frame *= tan(fov/2.);
-
-			/* and done */
-			float x = x_frame;
-			float y = y_frame;
-
-			#else
-
-			/* same thing but all in two lines */
-			float x =  (2*(i + 0.5)/(float)width  - 1)*tan(fov/2.)*width/(float)height;
-			float y = -(2*(j + 0.5)/(float)height - 1)*tan(fov/2.);
-			#endif
-			vec3 dir;
-			dir[0] = x;
-			dir[1] = y;
-			dir[2] = -1;
-			glm_vec3_normalize(dir);
-			vec3 origin = {0,0,0};
-			framebuffer[i + j * width] = cast_ray(origin, dir, spheres, 4, lights, 3, 4);
-		}
-	}
-
+	render(framebuffer, width, height, spheres, sphere_count, lights, light_count, reflective_depth, fov);
+	
 	/* save render */
 	if (write_frame(framebuffer, width, height, 0) == -1) {
 		return -1;
