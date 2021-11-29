@@ -5,12 +5,11 @@
  * Version: Fall 2022
  */
 
+#include <cglm/cglm.h>
 #include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#include "cglm/cglm.h"
 
 /* Data Types */
 

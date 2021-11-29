@@ -1,12 +1,10 @@
-CC=gcc -g -Wall -lpthread -lm
-CFILES=main.c
-OFILES=$(CFILES:.c=.o)
+CC=gcc -g -Wall -lpthread -lm -Ilib
+OBJECTS=raytracer_serial raytracer_threaded
 
-jacobi:	$(OFILES)
-	$(CC) -o main $(OFILES)
+all: $(OBJECTS)
 
-.c.o:
-	$(CC) -c $<
+$(OBJECTS): %: src/%.c
+	$(CC) -o bin/$@ $<
 
 clean::
-	/bin/rm $(OFILES) main
+	/bin/rm $(OBJECTS:%=./bin/%)
