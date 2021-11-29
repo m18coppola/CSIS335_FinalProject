@@ -16,7 +16,7 @@ git push --set-upstream origin branch_name
 Once you have made this first push, you no longer need to use `--set-upstream origin` when you push going forward.
 
 ## Step 3:
-Merge you work to the main branch. To do this in the safest way possible, start by executing:
+Merge your work to the main branch. To do this in the safest way possible, start by executing:
 ```
 git merge main
 ```
