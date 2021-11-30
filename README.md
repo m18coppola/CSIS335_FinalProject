@@ -12,7 +12,8 @@ Requires [ffmpeg](https://ffmpeg.org/)
 
 ## How to Make
 `./run.sh`
-  - automatically builds the project, renders frames and uses ffmpeg to output video at project root
+  - automatically builds the project, renders frames and uses ffmpeg to output video at project root  
+
 `make`
   - create all binaries  
 
