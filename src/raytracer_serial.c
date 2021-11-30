@@ -399,7 +399,7 @@ write_frame(Color *framebuffer, int width, int height, long unsigned int frameID
 	char filename[32];
 	FILE *file;
 
-	sprintf(filename, "frames/frame_%lu.ppm", frameID);
+	sprintf(filename, "frames/%lu_frame.ppm", frameID);
 	file = fopen(filename, "wb"); /* w for write flag, b for binary mode */
 
 	if (file == NULL) {
@@ -447,15 +447,13 @@ write_frame(Color *framebuffer, int width, int height, long unsigned int frameID
 		fwrite(&b, sizeof(char), 1, file);
 	}
 	fclose(file);
-	return -1;
+	return 0;
 }
 
 void
 render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, double fov)
 {
-
 	int i, j;
-
 	for (j = 0; j < height; j++) {
 		for (i = 0; i < width; i++) {
 			float x =  (2*(i + 0.5)/(float)width  - 1)*tan(fov/2.)*width/(float)height;
@@ -469,7 +467,6 @@ render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_co
 			framebuffer[i + j * width] = cast_ray(origin, dir, spheres, sphere_count, lights, light_count, depth);
 		}
 	}
-
 }
 
 int
@@ -478,10 +475,23 @@ main(int argc, char *argv[])
 	int width;
 	int height;
 	Color *framebuffer;
-	int i, j;
 	int reflective_depth;
-	char *filename = "output.ppm";
 	float fov;
+	float duration;
+	int framerate;
+	long unsigned int frame_count;
+	float time_step;
+	float degs_per_sec;
+	float rads_per_sec;
+
+	degs_per_sec = 90.0;
+	rads_per_sec = degs_per_sec * M_PI/180.0;
+
+	duration = 15.0; //seconds
+	framerate = 24; //frames per second
+
+	frame_count = framerate * duration;
+	time_step = duration / (float)frame_count;
 	
 
 	width = 1024;
@@ -505,15 +515,27 @@ main(int argc, char *argv[])
 	};
 	int light_count = 3;
 
-	/* allocate an array of pixels for the image */
 	framebuffer = (Color *)malloc(sizeof(Color) * width * height);
+	for (int frame = 0; frame < frame_count; frame++) {
+		render(framebuffer, width, height, spheres, sphere_count, lights, light_count, reflective_depth, fov);
 
-	render(framebuffer, width, height, spheres, sphere_count, lights, light_count, reflective_depth, fov);
+		for (int si = 0; si < sphere_count; si++) {
+			spheres[si].center[2] += 20.0;
+			glm_vec3_rotate(spheres[si].center, rads_per_sec * time_step, GLM_YUP);
+			spheres[si].center[2] -= 20.0;
+			
+			if (write_frame(framebuffer, width, height, frame) == -1) {
+				return -1;
+			}
+		}
+		printf("%f%% done.\n", (float)frame/(float)frame_count*100.0);
+
+	}
+
+
 	
 	/* save render */
-	if (write_frame(framebuffer, width, height, 0) == -1) {
-		return -1;
-	}
+	
 
 	
 	/* clean up */
