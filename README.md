@@ -1,7 +1,7 @@
 # CSIS355_FinalProject
 
 ## Dependencies
-Requires ffmpeg
+Requires [ffmpeg](https://ffmpeg.org/)
 
 
 ## Directories
