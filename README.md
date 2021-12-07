@@ -1,4 +1,4 @@
-# CSIS355_FinalProject
+# CSIS335_FinalProject
 
 ## Dependencies
 Requires [ffmpeg](https://ffmpeg.org/)
