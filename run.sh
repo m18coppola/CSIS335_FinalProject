@@ -1,6 +1,9 @@
 #/bin/sh
 make
 cd bin
+cd frames
+rm ./*
+cd ./..
 ./raytracer_serial
 cd frames
-ffmpeg -framerate 24 -i %d_frame.ppm -crf 15 ../../output.mp4
+yes | ffmpeg -framerate 24 -i %d_frame.ppm -crf 15 ../../output.mp4
