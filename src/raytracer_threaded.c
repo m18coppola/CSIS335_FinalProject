@@ -7,6 +7,7 @@
 #include <cglm/cglm.h>
 #include <float.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -45,7 +46,7 @@ typedef struct {
 Color cast_ray(vec3 orig, vec3 dir, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth);
 int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec3 *hit, vec3 *N, Material *mat);
 void refract(vec3 incomming, vec3 normal, float refractive_index, vec3 out);
-void render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, double fov);
+void render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, float fov);
 int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
 void reflect(vec3 light_dir, vec3 normal, vec3 reflection_out);
 int write_frame(Color *framebuffer, int width, int height, long unsigned int frameID);
@@ -384,23 +385,81 @@ write_frame(Color *framebuffer, int width, int height, long unsigned int frameID
 	return 0;
 }
 
-void
-render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, double fov)
+typedef struct {
+	Color *framebuffer;
+	int width;
+	int height;
+	Sphere *spheres;
+	int sphere_count;
+	Light *lights;
+	int light_count;
+	int depth;
+	float fov;
+	int thread_count;
+} SharedData;
+typedef struct {
+	pthread_t thread_id;
+	SharedData *td;
+	int start_row;
+	int end_row;
+} Thread;
+void *
+thread_cast(void *args)
 {
+	Thread this = *(Thread*)args;
+	SharedData ta = *(this.td);
+
 	int i, j;
 	float x, y;
-	for (j = 0; j < height; j++)
-		for (i = 0; i < width; i++) {
-			x =  (2*(i + 0.5)/(float)width  - 1)*tan(fov/2.)*width/(float)height;
-			y = -(2*(j + 0.5)/(float)height - 1)*tan(fov/2.);
+	for (j = this.start_row; j < this.end_row; j++)
+		for (i = 0; i < ta.width; i++) {
+			x =  (2*(i + 0.5)/(float)ta.width  - 1)*tan(ta.fov/2.)*ta.width/(float)ta.height;
+			y = -(2*(j + 0.5)/(float)ta.height - 1)*tan(ta.fov/2.);
 			vec3 dir;
 			dir[0] = x;
 			dir[1] = y;
 			dir[2] = -1;
 			glm_vec3_normalize(dir);
 			vec3 origin = {0,0,0};
-			framebuffer[i + j * width] = cast_ray(origin, dir, spheres, sphere_count, lights, light_count, depth);
+			ta.framebuffer[i + j * ta.width] = cast_ray(origin, dir, ta.spheres, ta.sphere_count, ta.lights, ta.light_count, ta.depth);
 		}
+	return NULL;
+}
+void
+render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, float fov)
+{
+	int thread_count = 5;
+	SharedData sd = {
+		.framebuffer = framebuffer,
+		.width = width,
+		.height = height,
+		.spheres = spheres,
+		.sphere_count = sphere_count,
+		.lights = lights,
+		.light_count = light_count,
+		.depth = depth,
+		.fov = fov,
+		.thread_count = thread_count
+	};
+	int currentRow = 0;
+	int row_count = height/thread_count;
+	Thread *threads = (Thread *)malloc(sizeof(Thread) * thread_count);
+	int rc;
+	for (int i = 0; i < thread_count; i++) {
+		threads[i].td = &sd;
+		threads[i].start_row = currentRow;
+		currentRow += row_count;
+		if (i < height%thread_count) currentRow++;
+		threads[i].end_row = currentRow;
+		rc = pthread_create(&(threads[i].thread_id), NULL, thread_cast, threads + i);
+		if (rc != 0) {
+			fprintf(stderr, "Could not create thread %d.\n", i);
+			exit(1);
+		}
+	}
+	for (int i = 0; i < thread_count; i++) {
+		pthread_join(threads[i].thread_id, NULL);
+	}
 }
 
 int
