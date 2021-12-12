@@ -473,20 +473,22 @@ main(int argc, char *argv[])
 	    for(int frame = 0; frame < frame_count; frame++) {
 	      // send to waiting process frame number to calculate
 	      printf("Sending frame %d\n", frame);
-	      MPI_Send(&frame, 1, MPI_INT, NULL, 1, MPI_COMM_WORLD);  
+	      MPI_Send(&frame, 1, MPI_INT, MPI_ANY_SOURCE, 1, MPI_COMM_WORLD);  
 	    }
 	    
 	    // send -1 to each process as frame to do
 	    int frame = -1;
 	    for(int procs = 0; procs < numProcs; procs++){
-	      MPI_Send(&frame, 1, MPI_INT, NULL, 1, MPI_COMM_WORLD);
+	      MPI_Send(&frame, 1, MPI_INT, MPI_ANY_SOURCE, 1, MPI_COMM_WORLD);
 	    }
 	  }
 	  else{
 	    int recv_frame = 0;
 	    while(recv_frame != -1){
 	      // Request Work from rank 0
-	      MPI_Recv(&recv_frame, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, NULL);
+      	      MPI_Recv(&recv_frame, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	      printf("Received Frame %d\n", recv_frame);
+
 	      // IF frame to do  == -1 end loop
 	      if(recv_frame == -1){
 		break;

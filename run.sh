@@ -1,6 +1,6 @@
 #/bin/sh
 gmake
-#cd bin
+cd bin
 cd frames
 rm ./*
 cd ./..
