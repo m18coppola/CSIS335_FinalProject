@@ -1,4 +1,4 @@
-CC=gcc -g -Wall -lpthread -lm -Ilib
+CC=mpicc -g -Wall -lpthread -lm -Ilib
 OBJECTS=raytracer_serial raytracer_threaded
 
 all: $(OBJECTS)

@@ -9,6 +9,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <mpi.h>
 
 /* Data Types */
 
@@ -418,6 +419,19 @@ main(int argc, char *argv[])
 	float degs_per_sec;
 	float rads_per_sec;
 
+	int initReturn, rank, numProcs;
+	initReturn = MPI_Init(NULL, NULL);
+	if(initReturn != MPI_SUCCESS) {
+	  fprintf(stderr, "MPI was unable to initialize. Exiting.\n");
+	  return 1;
+	}
+
+	
+	/* get info from MPI context */
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &numProcs);
+
+	
 	/* rotation speed */
 	degs_per_sec = 90.0;
 	rads_per_sec = degs_per_sec * M_PI/180.0;
@@ -451,20 +465,58 @@ main(int argc, char *argv[])
 	int light_count = 3;
 
 	framebuffer = (Color *)malloc(sizeof(Color) * width * height);
-	for (int frame = 0; frame < frame_count; frame++) {
-		render(framebuffer, width, height, spheres, sphere_count, lights, light_count, reflective_depth, fov);
-
-		for (int si = 0; si < sphere_count; si++) {
+	
+	  // IF RANK 0 wait for proc to request for work and hand it out
+	  if (rank == 0){
+	    // Loop to send proc work
+	    
+	    for(int frame = 0; frame < frame_count; frame++) {
+	      // send to waiting process frame number to calculate
+	      printf("Sending frame %d\n", frame);
+	      MPI_Send(&frame, 1, MPI_INT, NULL, 1, MPI_COMM_WORLD);  
+	    }
+	    
+	    // send -1 to each process as frame to do
+	    int frame = -1;
+	    for(int procs = 0; procs < numProcs; procs++){
+	      MPI_Send(&frame, 1, MPI_INT, NULL, 1, MPI_COMM_WORLD);
+	    }
+	  }
+	  else{
+	    int recv_frame = 0;
+	    while(recv_frame != -1){
+	      // Request Work from rank 0
+	      MPI_Recv(&recv_frame, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, NULL);
+	      // IF frame to do  == -1 end loop
+	      if(recv_frame == -1){
+		break;
+	      }
+	      // Adjust every sphere in the frame
+	      	for (int si = 0; si < sphere_count; si++) {
 			spheres[si].center[2] += 20.0;
-			glm_vec3_rotate(spheres[si].center, rads_per_sec * time_step, GLM_YUP);
+			glm_vec3_rotate(spheres[si].center, rads_per_sec * (time_step * recv_frame), GLM_YUP);
 			spheres[si].center[2] -= 20.0;
 			
-			if (write_frame(framebuffer, width, height, frame) == -1) {
-				return -1;
-			}
 		}
-		printf("%f%% done.\n", (float)frame/(float)frame_count*100.0);
+		
+		render(framebuffer, width, height, spheres, sphere_count, lights, light_count, reflective_depth, fov);
+		if (write_frame(framebuffer, width, height, recv_frame) == -1) {
+		  return -1;
+		}
 
+		// Undo rotations
+	       	for (int si = 0; si < sphere_count; si++) {
+		        spheres[si].center[2] += 20.0;
+			glm_vec3_rotate(spheres[si].center, -rads_per_sec * (time_step * recv_frame), GLM_YUP);
+			spheres[si].center[2] -= 20.0;
+		}
+	  }
+
+	  // MPI_Finalize
+	  MPI_Finalize();
+ 	
+		
+	
 	}
 
 	/* clean up */
