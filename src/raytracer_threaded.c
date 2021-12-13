@@ -512,6 +512,8 @@ main(int argc, char *argv[])
 	float degs_per_sec;
 	float rads_per_sec;
 	int thread_count;
+	char ffmpeg_command[256];
+	int i;
 
 	/* rotation speed */
 	degs_per_sec = 90.0;
@@ -523,8 +525,8 @@ main(int argc, char *argv[])
 	frame_count = framerate * duration;
 	time_step = duration / (float)frame_count;
 
-	width = 720;
-	height = 480;
+	width = 400;
+	height = 300;
 	reflective_depth = 4;
 	fov = 57;
 	fov *= M_PI/180;
@@ -546,6 +548,9 @@ main(int argc, char *argv[])
 
 	thread_count = 4;
 
+	system("exec rm -rd ./frames/");
+	system("exec mkdir ./frames/");
+
 	framebuffer = (Color *)malloc(sizeof(Color) * width * height);
 	for (int frame = 0; frame < frame_count; frame++) {
 		render(framebuffer, width, height, spheres, sphere_count, lights, light_count, reflective_depth, fov, thread_count);
@@ -559,12 +564,22 @@ main(int argc, char *argv[])
 				return -1;
 			}
 		}
-		printf("\r%.0f%% done.", (float)frame/(float)frame_count*100.0);
+		printf("\r%.0f%% of frames rendered.", (float)frame/(float)frame_count*100.0);
 		fflush(stdout);
 
 	}
-	printf("\r100%% done.");
+	printf("\r100%% of frames rendered.");
 	fflush(stdout);
+	printf("\nRendering complete.\n");
+	printf("elapsed time: ??\n");
+	printf("Handing off to ffmpeg...\n");
+	printf("[");
+	/* super secret "goes to" operator ;) */
+	i = 68; while (i-->0) printf("=");
+	printf("]\n");
+	sprintf(ffmpeg_command, "exec ffmpeg -framerate %d -i ./frames/%%d_frame.ppm -crf 15 -y output.mp4", framerate);
+	printf("%s\n", ffmpeg_command);
+	system(ffmpeg_command);
 
 	/* clean up */
 	free(framebuffer);
