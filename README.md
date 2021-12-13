@@ -1,7 +1,7 @@
 # CSIS335_FinalProject
 
 ## Dependencies
-Requires [ffmpeg](https://ffmpeg.org/)
+Requires [ffmpeg](https://ffmpeg.org/), [OpenMPI](https://www.open-mpi.org/)
 
 
 ## Directories
