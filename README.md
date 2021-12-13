@@ -10,9 +10,7 @@ Requires [ffmpeg](https://ffmpeg.org/)
 `src/`: source code  
 `reports/`: project proposal, progress report and paper content
 
-## How to Make
-`./run.sh`
-  - automatically builds the project, renders frames and uses ffmpeg to output video at project root  
+## How to Build 
 
 `make`
   - create all binaries  
