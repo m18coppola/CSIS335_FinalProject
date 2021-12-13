@@ -517,6 +517,7 @@ main(int argc, char *argv[])
 	char ffmpeg_command[256];
 	int i;
 	char *endptr;
+	double start_time;
 
 	/* HARD CODE PARAMS */
 	/* ==================================================== */
@@ -543,9 +544,17 @@ main(int argc, char *argv[])
 	  return 1;
 	}
 
+	start_time = MPI_Wtime();
+
 	/* get info from MPI context */
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &numProcs);
+
+	if (numProcs < 2) {
+		fprintf(stderr, "At least two processes are needed for rendering. Exiting.\n");
+		MPI_Abort(MPI_COMM_WORLD, 1);
+		return 1;
+	}
 	
 	/* parse input */
 	if (argc != 6) {
@@ -620,7 +629,6 @@ main(int argc, char *argv[])
 			printf("[%d] Finished\n", ready_thread);
 		}
 		printf("\nRendering complete.\n");
-		printf("elapsed time: ??\n");
 		printf("Handing off to ffmpeg...\n");
 		printf("[");
 		/* super secret "goes to" operator ;) */
@@ -629,6 +637,11 @@ main(int argc, char *argv[])
 		sprintf(ffmpeg_command, "exec ffmpeg -framerate %d -i ./frames/%%d_frame.ppm -crf 15 -y output.mp4", framerate);
 		printf("%s\n", ffmpeg_command);
 		system(ffmpeg_command);
+		printf("[");
+		i = 68; while (i-->0) printf("=");
+		printf("]\n");
+		printf("COMPLETE!\n");
+		printf("elapsed time: %.1f seconds.\n", MPI_Wtime() - start_time);
 	} else {
 		framebuffer = (Color *)malloc(sizeof(Color) * width * height);
 		int recv_frame = 0;
