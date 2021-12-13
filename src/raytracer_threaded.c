@@ -1,7 +1,7 @@
 /* 
  * Serial Software Ray Tracer
  *
- * Authors: Michael Coppola
+ * Authors: Michael Coppola, Andrew Towse, Nick Shelby
  * Version: Fall 2022
  */
 #include <cglm/cglm.h>
@@ -42,180 +42,116 @@ typedef struct {
 	Material mat;
 } Sphere;
 
+typedef struct {
+	Color *framebuffer;
+	int width;
+	int height;
+	Sphere *spheres;
+	int sphere_count;
+	Light *lights;
+	int light_count;
+	int depth;
+	float fov;
+} SharedData;
+
+typedef struct {
+	pthread_t thread_id;
+	SharedData *td;
+	int start_row;
+	int end_row;
+} Thread;
+
 /* Function Declarations */
 Color cast_ray(vec3 orig, vec3 dir, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth);
 int first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec3 *hit, vec3 *N, Material *mat);
-void refract(vec3 incomming, vec3 normal, float refractive_index, vec3 out);
-void render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, float fov);
-int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
 void reflect(vec3 light_dir, vec3 normal, vec3 reflection_out);
+void refract(vec3 incomming, vec3 normal, float refractive_index, vec3 out);
+void render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, float fov, int thread_count);
+int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
+void * thread_cast(void *args);
 int write_frame(Color *framebuffer, int width, int height, long unsigned int frameID);
 
 /* Material Definitions */
+/* 
+ * DARKBLUE !INCOMPLETE MATERIAL - COLOR ONLY!
+ * DARKRED
+ * WHITE
+ * YELLOW
+ * IVORY
+ * MIRROR
+ * GLASS
+ */
 const Material DARKBLUE = {.color.v = {0.2, 0.7, 0.8}};
 const Material DARKRED =  {
 	.color.v = {0.3, 0.1, 0.1} ,
-
 	.diffuse_reflectance = 0.9, 
 	.specular_reflectance = 0.1,
 	.mirror_reflectance = 0.0,
 	.refraction_reflectance = 0.0,
-
 	.shininess = 10.0, 
 	.refractive_index = 1.0,
 };
 const Material WHITE =  {
 	.color.v = {0.3, 0.3, 0.3} ,
-
 	.diffuse_reflectance = 0.9, 
 	.specular_reflectance = 0.1,
 	.mirror_reflectance = 0.0,
 	.refraction_reflectance = 0.0,
-
 	.shininess = 10.0, 
 	.refractive_index = 1.0,
 };
 const Material YELLOW =  {
 	.color.v = {0.3, 0.2, 0.1} ,
-
 	.diffuse_reflectance = 0.9, 
 	.specular_reflectance = 0.1,
 	.mirror_reflectance = 0.0,
 	.refraction_reflectance = 0.0,
-
 	.shininess = 10.0, 
 	.refractive_index = 1.0,
 };
 const Material IVORY =  {
 	.color.v = {0.4, 0.4, 0.3} , 
-
 	.diffuse_reflectance = 0.6, 
 	.specular_reflectance = 0.3, 
 	.mirror_reflectance = 0.1,
 	.refraction_reflectance = 0.0,
-
 	.shininess = 50.0, 
 	.refractive_index = 1.0,
 };
 const Material MIRROR =  {
 	.color.v = {1.0, 1.0, 1.0} , 
-
 	.diffuse_reflectance = 0.0, 
 	.specular_reflectance = 10.0, 
 	.mirror_reflectance = 0.8,
 	.refraction_reflectance = 0.0,
-
 	.shininess = 1425.0, 
 	.refractive_index = 1.0,
 };
 const Material GLASS =  {
 	.color.v = {0.6, 0.7, 0.8} , 
-
 	.diffuse_reflectance = 0.0, 
 	.specular_reflectance = 0.5, 
 	.mirror_reflectance = 0.1,
 	.refraction_reflectance = 0.8,
-
 	.shininess = 125.0, 
 	.refractive_index = 1.5,
 };
 
-
 /* Function Implementations */
 
 /* 
- * creates a new vector that is a refraction of the incoming vector.
- * The incomming angle is calculated with the incomming vector and the surface normal
- * the outgoing vector is calculated with the refractive index, and stored in the out vector
+ * casts a ray of virtual light into the world backwards and
+ * returns the color of it after it interacts with the scene
  *
- * This function uses textbook Snell's law.
- * See: https://en.wikipedia.org/wiki/Snell%27s_law#Vector_form
- */
-void
-refract(vec3 incomming, vec3 normal, float refractive_index, vec3 out)
-{
-	float cosi;
-	float etai = 1.0;
-	float etat, eta;
-	vec3 n;
-	float k;
-	float temp;
-
-	cosi = -1.0 * glm_max(-1.0, glm_min(1.0, glm_vec3_dot(incomming, normal)));
-	etat = refractive_index;
-	glm_vec3_dup(normal, n);
-	if (cosi < 0) {
-		cosi = -cosi;
-		temp = etai;
-		etai = etat;
-		etat = temp;
-		glm_vec3_negate(n);
-	}
-	eta = etai / etat;
-	k = 1 - eta * eta * (1 - cosi * cosi);
-	if (k < 0)
-		glm_vec3_zero(out);
-	else {
-		glm_vec3_scale(incomming, eta, out);
-		glm_vec3_scale(n, eta * cosi - sqrt(k), n);
-		glm_vec3_add(out, n, out);
-	}
-}
-
-/* 
- * Determines if a ray interesects a sphere, and where.
- * returns 0 if there is no intersection
- * returns 1 if there is an intersection
+ * param orig: origin location of the ray
+ * param dir: direction of the ray
+ * param spheres: list of spheres in scene
+ * param sphere_count: sphere list length
+ * param lights: list of light sources in scene
+ * param light_count: light list length
+ * param depth: number of allowed reflections a ray can take off a surface
  *
- * If there is an intersection, t0 will be populated with the distance
- * between the ray's origin and the intersection.
- *
- * See: http://www.lighthouse3d.com/tutorials/maths/ray-sphere-intersection/
- */
-int
-sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0)
-{
-	vec3 L;
-	float tc;
-	float d2;
-	float r2;
-	float t1c;
-	float t1;
-
-	glm_vec3_sub(sphere.center, origin, L);
-	tc = glm_vec3_dot(L, dir);
-	d2 = glm_vec3_dot(L, L) - tc * tc;
-	r2 = sphere.radius * sphere.radius;
-	if (d2 > r2) return 0;
-	t1c = sqrt(r2 - d2);
-	*t0 = tc - t1c;
-	t1 = tc + t1c;
-	if (*t0 < 0) *t0 = t1;
-	if (*t0 < 0) return 0;
-	return 1;
-}
-
-/* 
- * Reflects the first vector over the axis the second vector represents.
- * The result is stored in the third vector
- */
-void
-reflect(vec3 light_dir, vec3 normal, vec3 reflection_out)
-{
-	glm_vec3_scale(normal, 2.0 * glm_vec3_dot(light_dir, normal), reflection_out);
-	glm_vec3_sub(light_dir, reflection_out, reflection_out);
-}
-
-/* 
- * Takes a ray and traces it through space until it intersects with an object
- *
- * returns the material of the object it lands on or the material of the background if
- * there is no intersection
- *
- * param ray_origin the starting position of the ray
- * param ray_direction unit vector representing the direction of the ray
- * param spheres array of spheres to be considered for intersection testing
- * param lights array of lights to shine on spheres
+ * return: color of light ray
  */
 Color
 cast_ray(vec3 orig, vec3 dir, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth)
@@ -303,9 +239,14 @@ cast_ray(vec3 orig, vec3 dir, Sphere *spheres, int sphere_count, Light *lights, 
  * *surface_normal a unit vector that is perpendicular with the tangential plane upon the position of intersection
  * *mat the material of the intersected object
  *
- * param origin ray origin
- * param dir direction of ray
- * param spheres array of spheres to be considered for intersection
+ * param origin: ray origin
+ * param dir: direction of ray
+ * param spheres: array of spheres to be considered for intersection
+ * output hit: coordinate of intersection
+ * output surface_normal: unit vector perpendicular to surface of intersection
+ * output material: material of surface intersected
+ *
+ * return: 1 if intersection, 0 otherwise
  */
 
 int
@@ -348,7 +289,178 @@ first_intersect_of(vec3 origin, vec3 dir, Sphere *spheres, int sphere_count, vec
 
 	return glm_min(distance, plane_dist) < 1000;
 }
+/* 
+ * renders the input spheres, lights and parameters to the supplied framebuffer.
+ *
+ * output framebuffer: framebuffer to write the render output to
+ * param width: width of frame buffer
+ * param height: height of framebuffer
+ * param spheres: list of spheres in scene
+ * param sphere_count: sphere list length
+ * param lights: list of light sources in scene
+ * param light_count: light list length
+ * param depth: upper limit to number of reflections a ray can make
+ * param fov: the fov of the perspective of the frame (in radians)
+ */
+void
+render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, float fov, int thread_count)
+{
+	int current_row;
+	int i;
+	int rc;
+	int row_count;
 
+	SharedData sd = {
+		.framebuffer = framebuffer,
+		.width = width,
+		.height = height,
+		.spheres = spheres,
+		.sphere_count = sphere_count,
+		.lights = lights,
+		.light_count = light_count,
+		.depth = depth,
+		.fov = fov,
+	};
+
+	Thread *threads = (Thread *)malloc(sizeof(Thread) * thread_count);
+	current_row = 0;
+	row_count = height/thread_count;
+	for (i = 0; i < thread_count; i++) {
+		threads[i].td = &sd;
+		threads[i].start_row = current_row;
+		current_row += row_count;
+		if (i < height%thread_count) current_row++;
+		threads[i].end_row = current_row;
+		rc = pthread_create(&(threads[i].thread_id), NULL, thread_cast, threads + i);
+		if (rc != 0) {
+			fprintf(stderr, "Could not create thread %d.\n", i);
+			exit(1);
+		}
+	}
+	for (i = 0; i < thread_count; i++)
+		pthread_join(threads[i].thread_id, NULL);
+	free(threads);
+}
+
+/* 
+ * Reflects the first vector over the the same axis as the normal vector's.
+ * The reflection is stored in reflection_out
+ */
+void
+reflect(vec3 light_dir, vec3 normal, vec3 reflection_out)
+{
+	glm_vec3_scale(normal, 2.0 * glm_vec3_dot(light_dir, normal), reflection_out);
+	glm_vec3_sub(light_dir, reflection_out, reflection_out);
+}
+
+/* 
+ * creates a new vector that is a refraction of the incoming vector.
+ * The incomming angle is calculated with the incomming vector and the surface normal
+ * the outgoing vector is calculated with the refractive index, and stored in the out vector
+ *
+ * This function uses textbook Snell's law.
+ * See: https://en.wikipedia.org/wiki/Snell%27s_law#Vector_form
+ */
+void
+refract(vec3 incomming, vec3 normal, float refractive_index, vec3 out)
+{
+	float cosi;
+	float etai = 1.0;
+	float etat, eta;
+	vec3 n;
+	float k;
+	float temp;
+
+	cosi = -1.0 * glm_max(-1.0, glm_min(1.0, glm_vec3_dot(incomming, normal)));
+	etat = refractive_index;
+	glm_vec3_dup(normal, n);
+	if (cosi < 0) {
+		cosi = -cosi;
+		temp = etai;
+		etai = etat;
+		etat = temp;
+		glm_vec3_negate(n);
+	}
+	eta = etai / etat;
+	k = 1 - eta * eta * (1 - cosi * cosi);
+	if (k < 0)
+		glm_vec3_zero(out);
+	else {
+		glm_vec3_scale(incomming, eta, out);
+		glm_vec3_scale(n, eta * cosi - sqrt(k), n);
+		glm_vec3_add(out, n, out);
+	}
+}
+
+/* 
+ * Determines if a ray interesects a sphere, and where.
+ * returns 0 if there is no intersection
+ * returns 1 if there is an intersection
+ *
+ * If there is an intersection, t0 will be populated with the distance
+ * between the ray's origin and the intersection.
+ *
+ * See: https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
+ */
+int
+sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0)
+{
+	vec3 L;
+	float tc;
+	float d2;
+	float r2;
+	float t1c;
+	float t1;
+
+	glm_vec3_sub(sphere.center, origin, L);
+	tc = glm_vec3_dot(L, dir);
+	d2 = glm_vec3_dot(L, L) - tc * tc;
+	r2 = sphere.radius * sphere.radius;
+	if (d2 > r2) return 0;
+	t1c = sqrt(r2 - d2);
+	*t0 = tc - t1c;
+	t1 = tc + t1c;
+	if (*t0 < 0) *t0 = t1;
+	if (*t0 < 0) return 0;
+	return 1;
+}
+
+/* 
+ * thread execution function for render.
+ *
+ * param args: a fully populated Thread pointer
+ */
+void *
+thread_cast(void *args)
+{
+	Thread this = *(Thread*)args;
+	SharedData ta = *(this.td);
+
+	int i, j;
+	float x, y;
+	for (j = this.start_row; j < this.end_row; j++)
+		for (i = 0; i < ta.width; i++) {
+			x =  (2*(i + 0.5)/(float)ta.width  - 1)*tan(ta.fov/2.)*ta.width/(float)ta.height;
+			y = -(2*(j + 0.5)/(float)ta.height - 1)*tan(ta.fov/2.);
+			vec3 dir;
+			dir[0] = x;
+			dir[1] = y;
+			dir[2] = -1;
+			glm_vec3_normalize(dir);
+			vec3 origin = {0,0,0};
+			ta.framebuffer[i + j * ta.width] = cast_ray(origin, dir, ta.spheres, ta.sphere_count, ta.lights, ta.light_count, ta.depth);
+		}
+	return NULL;
+}
+
+/* 
+ * write the framebuffer to a ppm file in the ./frame/ sub-directory.
+ *
+ * param framebuffer: framebuffer to print to file
+ * param width: width of framebuffer
+ * param height: height of framebuffer
+ * param frameID: UID for output filename
+ */
 int
 write_frame(Color *framebuffer, int width, int height, long unsigned int frameID)
 {
@@ -385,83 +497,6 @@ write_frame(Color *framebuffer, int width, int height, long unsigned int frameID
 	return 0;
 }
 
-typedef struct {
-	Color *framebuffer;
-	int width;
-	int height;
-	Sphere *spheres;
-	int sphere_count;
-	Light *lights;
-	int light_count;
-	int depth;
-	float fov;
-	int thread_count;
-} SharedData;
-typedef struct {
-	pthread_t thread_id;
-	SharedData *td;
-	int start_row;
-	int end_row;
-} Thread;
-void *
-thread_cast(void *args)
-{
-	Thread this = *(Thread*)args;
-	SharedData ta = *(this.td);
-
-	int i, j;
-	float x, y;
-	for (j = this.start_row; j < this.end_row; j++)
-		for (i = 0; i < ta.width; i++) {
-			x =  (2*(i + 0.5)/(float)ta.width  - 1)*tan(ta.fov/2.)*ta.width/(float)ta.height;
-			y = -(2*(j + 0.5)/(float)ta.height - 1)*tan(ta.fov/2.);
-			vec3 dir;
-			dir[0] = x;
-			dir[1] = y;
-			dir[2] = -1;
-			glm_vec3_normalize(dir);
-			vec3 origin = {0,0,0};
-			ta.framebuffer[i + j * ta.width] = cast_ray(origin, dir, ta.spheres, ta.sphere_count, ta.lights, ta.light_count, ta.depth);
-		}
-	return NULL;
-}
-void
-render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, float fov)
-{
-	int thread_count = 5;
-	SharedData sd = {
-		.framebuffer = framebuffer,
-		.width = width,
-		.height = height,
-		.spheres = spheres,
-		.sphere_count = sphere_count,
-		.lights = lights,
-		.light_count = light_count,
-		.depth = depth,
-		.fov = fov,
-		.thread_count = thread_count
-	};
-	int currentRow = 0;
-	int row_count = height/thread_count;
-	Thread *threads = (Thread *)malloc(sizeof(Thread) * thread_count);
-	int rc;
-	for (int i = 0; i < thread_count; i++) {
-		threads[i].td = &sd;
-		threads[i].start_row = currentRow;
-		currentRow += row_count;
-		if (i < height%thread_count) currentRow++;
-		threads[i].end_row = currentRow;
-		rc = pthread_create(&(threads[i].thread_id), NULL, thread_cast, threads + i);
-		if (rc != 0) {
-			fprintf(stderr, "Could not create thread %d.\n", i);
-			exit(1);
-		}
-	}
-	for (int i = 0; i < thread_count; i++) {
-		pthread_join(threads[i].thread_id, NULL);
-	}
-}
-
 int
 main(int argc, char *argv[])
 {
@@ -476,6 +511,7 @@ main(int argc, char *argv[])
 	float time_step;
 	float degs_per_sec;
 	float rads_per_sec;
+	int thread_count;
 
 	/* rotation speed */
 	degs_per_sec = 90.0;
@@ -486,7 +522,6 @@ main(int argc, char *argv[])
 
 	frame_count = framerate * duration;
 	time_step = duration / (float)frame_count;
-	
 
 	width = 720;
 	height = 480;
@@ -509,9 +544,11 @@ main(int argc, char *argv[])
 	};
 	int light_count = 3;
 
+	thread_count = 4;
+
 	framebuffer = (Color *)malloc(sizeof(Color) * width * height);
 	for (int frame = 0; frame < frame_count; frame++) {
-		render(framebuffer, width, height, spheres, sphere_count, lights, light_count, reflective_depth, fov);
+		render(framebuffer, width, height, spheres, sphere_count, lights, light_count, reflective_depth, fov, thread_count);
 
 		for (int si = 0; si < sphere_count; si++) {
 			spheres[si].center[2] += 20.0;
@@ -522,14 +559,15 @@ main(int argc, char *argv[])
 				return -1;
 			}
 		}
-		printf("%f%% done.\n", (float)frame/(float)frame_count*100.0);
+		printf("\r%.0f%% done.", (float)frame/(float)frame_count*100.0);
+		fflush(stdout);
 
 	}
+	printf("\r100%% done.");
+	fflush(stdout);
 
 	/* clean up */
 	free(framebuffer);
 
 	return 0;
 }
-
-
