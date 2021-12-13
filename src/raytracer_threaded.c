@@ -1,5 +1,6 @@
 /* 
- * Serial Software Ray Tracer
+ * MuPMuTR - "Mup Mutter"
+ * Multi-Process Multi-Threaded Raytracer
  *
  * Authors: Michael Coppola, Andrew Towse, Nick Shelby
  * Version: Fall 2022
@@ -7,6 +8,7 @@
 #include <cglm/cglm.h>
 #include <float.h>
 #include <math.h>
+#include <mpi.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,7 +70,7 @@ void reflect(vec3 light_dir, vec3 normal, vec3 reflection_out);
 void refract(vec3 incomming, vec3 normal, float refractive_index, vec3 out);
 void render(Color *framebuffer, int width, int height, Sphere *spheres, int sphere_count, Light *lights, int light_count, int depth, float fov, int thread_count);
 int sphere_ray_intersect(Sphere sphere, vec3 origin, vec3 dir, float *t0);
-void * thread_cast(void *args);
+void *thread_cast(void *args);
 int write_frame(Color *framebuffer, int width, int height, long unsigned int frameID);
 
 /* Material Definitions */
@@ -515,6 +517,19 @@ main(int argc, char *argv[])
 	char ffmpeg_command[256];
 	int i;
 
+	int initReturn, rank, numProcs;
+	initReturn = MPI_Init(NULL, NULL);
+	if(initReturn != MPI_SUCCESS) {
+	  fprintf(stderr, "MPI was unable to initialize. Exiting.\n");
+	  return 1;
+	}
+
+	
+	/* get info from MPI context */
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &numProcs);
+
+	
 	/* rotation speed */
 	degs_per_sec = 90.0;
 	rads_per_sec = degs_per_sec * M_PI/180.0;
@@ -546,41 +561,81 @@ main(int argc, char *argv[])
 	};
 	int light_count = 3;
 
-	thread_count = 4;
+	thread_count = 2;
 
 	system("exec rm -rd ./frames/");
 	system("exec mkdir ./frames/");
 
+	int ready_thread;
 	framebuffer = (Color *)malloc(sizeof(Color) * width * height);
-	for (int frame = 0; frame < frame_count; frame++) {
-		render(framebuffer, width, height, spheres, sphere_count, lights, light_count, reflective_depth, fov, thread_count);
+	
+	  // IF RANK 0 wait for proc to request for work and hand it out
+	  if (rank == 0){
+		// Loop to send proc work
 
-		for (int si = 0; si < sphere_count; si++) {
-			spheres[si].center[2] += 20.0;
-			glm_vec3_rotate(spheres[si].center, rads_per_sec * time_step, GLM_YUP);
-			spheres[si].center[2] -= 20.0;
-			
-			if (write_frame(framebuffer, width, height, frame) == -1) {
-				return -1;
+		for(int frame = 0; frame < frame_count; frame++) {
+			// send to waiting process frame number to calculate
+			printf("Receiving which thread to send work to\n");
+			MPI_Recv(&ready_thread, 1, MPI_INT, MPI_ANY_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			printf("Sending frame to %d\n", ready_thread);
+			MPI_Send(&frame, 1, MPI_INT, ready_thread, 1, MPI_COMM_WORLD);  
+		}
+
+		// send -1 to each process as frame to do
+		int frame = -1;
+		for(int procs = 0; procs < numProcs-1; procs++){
+			MPI_Recv(&ready_thread, 1, MPI_INT, MPI_ANY_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			MPI_Send(&frame, 1, MPI_INT, ready_thread, 1, MPI_COMM_WORLD);
+			printf("[%d] Finished\n", ready_thread);
+		}
+		printf("\nRendering complete.\n");
+		printf("elapsed time: ??\n");
+		printf("Handing off to ffmpeg...\n");
+		printf("[");
+		/* super secret "goes to" operator ;) */
+		i = 68; while (i-->0) printf("=");
+		printf("]\n");
+		sprintf(ffmpeg_command, "exec ffmpeg -framerate %d -i ./frames/%%d_frame.ppm -crf 15 -y output.mp4", framerate);
+		printf("%s\n", ffmpeg_command);
+		system(ffmpeg_command);
+	} else {
+		int recv_frame = 0;
+		while(recv_frame != -1){
+			// Sending to rank 0 we are ready
+			printf("[%d] Sending Ready to rank 0\n", rank);
+			MPI_Send(&rank, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+
+			// Request Work from rank 0
+			MPI_Recv(&recv_frame, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			printf("[%d] Received Frame %d\n",rank, recv_frame);
+
+			// IF frame to do  == -1 end loop
+			if(recv_frame == -1){
+				break;
+			}
+			// Adjust every sphere in the frame
+			for (int si = 0; si < sphere_count; si++) {
+				spheres[si].center[2] += 20.0;
+				glm_vec3_rotate(spheres[si].center, rads_per_sec * (time_step * recv_frame), GLM_YUP);
+				spheres[si].center[2] -= 20.0;
+			}
+			render(framebuffer, width, height, spheres, sphere_count, lights, light_count, reflective_depth, fov, thread_count);
+			if (write_frame(framebuffer, width, height, recv_frame) == -1) {
+			  return -1;
+			}
+
+			// Undo rotations
+			for (int si = 0; si < sphere_count; si++) {
+				spheres[si].center[2] += 20.0;
+				glm_vec3_rotate(spheres[si].center, -rads_per_sec * (time_step * recv_frame), GLM_YUP);
+				spheres[si].center[2] -= 20.0;
 			}
 		}
-		printf("\r%.0f%% of frames rendered.", (float)frame/(float)frame_count*100.0);
-		fflush(stdout);
+      	}
 
-	}
-	printf("\r100%% of frames rendered.");
-	fflush(stdout);
-	printf("\nRendering complete.\n");
-	printf("elapsed time: ??\n");
-	printf("Handing off to ffmpeg...\n");
-	printf("[");
-	/* super secret "goes to" operator ;) */
-	i = 68; while (i-->0) printf("=");
-	printf("]\n");
-	sprintf(ffmpeg_command, "exec ffmpeg -framerate %d -i ./frames/%%d_frame.ppm -crf 15 -y output.mp4", framerate);
-	printf("%s\n", ffmpeg_command);
-	system(ffmpeg_command);
-
+	// MPI_Finalize
+	MPI_Finalize();
+       
 	/* clean up */
 	free(framebuffer);
 
