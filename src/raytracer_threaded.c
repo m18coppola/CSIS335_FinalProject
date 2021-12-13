@@ -516,6 +516,25 @@ main(int argc, char *argv[])
 	int thread_count;
 	char ffmpeg_command[256];
 	int i;
+	char *endptr;
+
+	/* HARD CODE PARAMS */
+	/* ==================================================== */
+	degs_per_sec = 90.0;	// speed of rotation of spheres
+	fov = 57;		// fov in degrees of perspective projection
+	reflective_depth = 4;	// recursive ray reflection limit
+	Sphere spheres[] = {	// list of spheres in scene
+		{.center = {-3.0, 0, -16}, .radius = 2, .mat = IVORY},
+		{.center = {-1.0, -1.5, -12}, .radius = 2, .mat = GLASS},
+		{.center = {1.5, -0.5, -18}, .radius = 3, .mat = DARKRED},
+		{.center = {7, 5, -18}, .radius = 4, .mat = MIRROR}
+	}; int sphere_count = 4;
+	Light lights[] = {	//list of lights in scene
+		{.pos = {-20, 20, 20}, .intensity = 1.5},
+		{.pos = {30, 50, -25}, .intensity = 1.8},
+		{.pos = {30, 20, 30}, .intensity = 1.7}
+	}; int light_count = 3;
+	/* ==================================================== */
 
 	int initReturn, rank, numProcs;
 	initReturn = MPI_Init(NULL, NULL);
@@ -524,53 +543,65 @@ main(int argc, char *argv[])
 	  return 1;
 	}
 
-	
 	/* get info from MPI context */
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &numProcs);
-
 	
-	/* rotation speed */
-	degs_per_sec = 90.0;
+	/* parse input */
+	if (argc != 6) {
+		if (rank == 0) fprintf(stderr, "Usage: mpirun -np numProccess ./raytracer_threaded threadsPerProcess framerate width height duration\n");	
+		MPI_Abort(MPI_COMM_WORLD, 1);
+		return 1;
+	}
+
+	thread_count = (int)strtol(argv[1], &endptr, 10);
+	if (endptr == argv[1] || *endptr != '\0' || thread_count <= 0) {
+		if (rank == 0) fprintf(stderr, "threadsPerProcess must be a positive non-zero integer. Exiting.\n");
+		MPI_Abort(MPI_COMM_WORLD, 1);
+		return 1;
+	}
+	
+	framerate = (int)strtol(argv[2], &endptr, 10);
+	if (endptr == argv[2] || *endptr != '\0' || framerate <= 0) {
+		if (rank == 0) fprintf(stderr, "framerate must be a positive non-zero integer. Exiting.\n");
+		MPI_Abort(MPI_COMM_WORLD, 1);
+		return 1;
+	}
+	
+	width = (int)strtol(argv[3], &endptr, 10);
+	if (endptr == argv[3] || *endptr != '\0' || width <= 0) {
+		if (rank == 0) fprintf(stderr, "width must be a positive non-zero integer. Exiting.\n");
+		MPI_Abort(MPI_COMM_WORLD, 1);
+		return 1;
+	}
+
+	height = (int)strtol(argv[4], &endptr, 10);
+	if (endptr == argv[4] || *endptr != '\0' || height <= 0) {
+		if (rank == 0) fprintf(stderr, "height must be a positive non-zero integer. Exiting.\n");
+		MPI_Abort(MPI_COMM_WORLD, 1);
+		return 1;
+	}
+	
+	duration = (int)strtol(argv[5], &endptr, 10);
+	if (endptr == argv[5] || *endptr != '\0' || height <= 0) {
+		if (rank == 0) fprintf(stderr, "duration must be a positive non-zero integer. Exiting.\n");
+		MPI_Abort(MPI_COMM_WORLD, 1);
+		return 1;
+	}
+
 	rads_per_sec = degs_per_sec * M_PI/180.0;
-
-	duration = 5.0; //seconds
-	framerate = 24; //frames per second
-
 	frame_count = framerate * duration;
 	time_step = duration / (float)frame_count;
-
-	width = 400;
-	height = 300;
-	reflective_depth = 4;
-	fov = 57;
 	fov *= M_PI/180;
 
-	Sphere spheres[] = {
-		{.center = {-3.0, 0, -16}, .radius = 2, .mat = IVORY},
-		{.center = {-1.0, -1.5, -12}, .radius = 2, .mat = GLASS},
-		{.center = {1.5, -0.5, -18}, .radius = 3, .mat = DARKRED},
-		{.center = {7, 5, -18}, .radius = 4, .mat = MIRROR}
-	};
-	int sphere_count = 4;
-
-	Light lights[] = {
-		{.pos = {-20, 20, 20}, .intensity = 1.5},
-		{.pos = {30, 50, -25}, .intensity = 1.8},
-		{.pos = {30, 20, 30}, .intensity = 1.7}
-	};
-	int light_count = 3;
-
-	thread_count = 2;
-
-	system("exec rm -rd ./frames/");
-	system("exec mkdir ./frames/");
-
 	int ready_thread;
-	framebuffer = (Color *)malloc(sizeof(Color) * width * height);
-	
-	  // IF RANK 0 wait for proc to request for work and hand it out
-	  if (rank == 0){
+
+	// IF RANK 0 wait for proc to request for work and hand it out
+	if (rank == 0){
+
+		system("exec rm -rd ./frames/");
+		system("exec mkdir ./frames/");
+
 		// Loop to send proc work
 
 		for(int frame = 0; frame < frame_count; frame++) {
@@ -599,6 +630,7 @@ main(int argc, char *argv[])
 		printf("%s\n", ffmpeg_command);
 		system(ffmpeg_command);
 	} else {
+		framebuffer = (Color *)malloc(sizeof(Color) * width * height);
 		int recv_frame = 0;
 		while(recv_frame != -1){
 			// Sending to rank 0 we are ready
@@ -631,13 +663,11 @@ main(int argc, char *argv[])
 				spheres[si].center[2] -= 20.0;
 			}
 		}
-      	}
+		free(framebuffer);
+	}
 
 	// MPI_Finalize
 	MPI_Finalize();
-       
-	/* clean up */
-	free(framebuffer);
 
 	return 0;
 }
