@@ -463,7 +463,7 @@ main(int argc, char *argv[])
 		{.pos = {30, 20, 30}, .intensity = 1.7}
 	};
 	int light_count = 3;
-
+	int ready_thread;
 	framebuffer = (Color *)malloc(sizeof(Color) * width * height);
 	
 	  // IF RANK 0 wait for proc to request for work and hand it out
@@ -472,22 +472,30 @@ main(int argc, char *argv[])
 	    
 	    for(int frame = 0; frame < frame_count; frame++) {
 	      // send to waiting process frame number to calculate
-	      printf("Sending frame %d\n", frame);
-	      MPI_Send(&frame, 1, MPI_INT, MPI_ANY_SOURCE, 1, MPI_COMM_WORLD);  
+	      printf("Receiving which thread to send work to\n");
+	      MPI_Recv(&ready_thread, 1, MPI_INT, MPI_ANY_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	      printf("Sending frame to %d\n", ready_thread);
+	      MPI_Send(&frame, 1, MPI_INT, ready_thread, 1, MPI_COMM_WORLD);  
 	    }
 	    
 	    // send -1 to each process as frame to do
 	    int frame = -1;
-	    for(int procs = 0; procs < numProcs; procs++){
-	      MPI_Send(&frame, 1, MPI_INT, MPI_ANY_SOURCE, 1, MPI_COMM_WORLD);
+	    for(int procs = 0; procs < numProcs-1; procs++){
+	      MPI_Recv(&ready_thread, 1, MPI_INT, MPI_ANY_SOURCE, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	      MPI_Send(&frame, 1, MPI_INT, ready_thread, 1, MPI_COMM_WORLD);
+	      printf("[%d] Finished\n", ready_thread);
 	    }
 	  }
 	  else{
 	    int recv_frame = 0;
 	    while(recv_frame != -1){
+	      // Sending to rank 0 we are ready
+	      printf("[%d] Sending Ready to rank 0\n", rank);
+	      MPI_Send(&rank, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+	      
 	      // Request Work from rank 0
       	      MPI_Recv(&recv_frame, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	      printf("Received Frame %d\n", recv_frame);
+	      printf("[%d] Received Frame %d\n",rank, recv_frame);
 
 	      // IF frame to do  == -1 end loop
 	      if(recv_frame == -1){
@@ -512,14 +520,13 @@ main(int argc, char *argv[])
 			glm_vec3_rotate(spheres[si].center, -rads_per_sec * (time_step * recv_frame), GLM_YUP);
 			spheres[si].center[2] -= 20.0;
 		}
-	  }
+	
+	    }
+      	}
 
 	  // MPI_Finalize
 	  MPI_Finalize();
- 	
-		
-	
-	}
+       
 
 	/* clean up */
 	free(framebuffer);
